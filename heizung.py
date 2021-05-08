@@ -201,7 +201,7 @@ class heating(object):
                 #     do_firing = "ON"
 
                 # this is enough energy!
-                if heizungs_dict['speicher_5_boden'] > 70:
+                if heizungs_dict['speicher_5_boden'] > 72:
                     do_firing = "OFF"
 
                 if minutes_ago_since_now <= 30:
