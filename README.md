@@ -2,7 +2,7 @@
 
 * don't forget to "chmod 755 heizung.py" so that the programm is executable
 
-To run the program as a "deamon", I decided to use 
+To run the program as a "daemon", I decided to use 
 supervisor http://supervisord.org. The advantages are awesome: 
 
 * supervisord will start the program automatically - also after reboot 
