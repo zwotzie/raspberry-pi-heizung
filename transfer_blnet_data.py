@@ -1,14 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import urllib2
-from time import gmtime, strftime, time, sleep
-import platform
-from ConfigParser import SafeConfigParser
 import logging
+import os
+import sys
+import urllib2
+from ConfigParser import SafeConfigParser
 from logging import config
-import sys, os
-
+from time import gmtime, strftime, time, sleep
 
 # Set up a specific logger with our desired output level
 _config_path = os.path.abspath(os.path.dirname(sys.argv[0]))
