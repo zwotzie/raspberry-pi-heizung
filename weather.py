@@ -2,6 +2,10 @@ import collections
 import re
 import requests
 from bs4 import BeautifulSoup
+from os import path
+from datetime import datetime
+# from datetime import date
+
 
 def flatten(dictionary, parent_key=False, separator='.'):
     """
@@ -81,3 +85,8 @@ if match and match.group('ss'):
 print("Anzahl zu erwartender Sonnenstunden: %r" % ssd_num)
 
 
+file_mod_time = datetime.fromtimestamp(path.getmtime('weather.py'))
+now = datetime.now()
+time_diff = now - file_mod_time
+modified_hours_ago = round(time_diff.total_seconds() / 3600, 1)  # float
+print("weather.py is zum letzten mal vor %r Stunden modifiziert worden" % modified_hours_ago)
