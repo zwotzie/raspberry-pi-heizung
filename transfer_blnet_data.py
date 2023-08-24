@@ -9,6 +9,7 @@ from ConfigParser import SafeConfigParser
 from logging import config
 from time import gmtime, strftime, time, sleep
 
+
 # Set up a specific logger with our desired output level
 _config_path = os.path.abspath(os.path.dirname(sys.argv[0]))
 _config_file = _config_path + "/etc/heizung.conf"
@@ -31,22 +32,25 @@ logger = logging.getLogger('transfer')
 logger.propagate = False
 
 
-def logmessage(message):
+def log_message(message):
     if log2log == "True":
         logger.info(message)
     else:
         print(message)
 
-logmessage("+-------  S T A R T  T R A N S F E R  ---------------")
-logmessage("|   %r" % strftime("%Y-%m-%d %H:%M:%S", gmtime()))
-logmessage("+----------------------------------------------------")
-logmessage("url_internal: %s" % url_internal)
 
-class heating(object):
+log_message("+-------  S T A R T  T R A N S F E R  ---------------")
+log_message("|   %r" % strftime("%Y-%m-%d %H:%M:%S", gmtime()))
+log_message("+----------------------------------------------------")
+log_message("url_internal: %s" % url_internal)
+
+
+class TransferData(object):
     def __init__(self):
         pass
 
-    def getResonseResult(self, url):
+
+    def get_resonse_result(self, url):
         request = urllib2.Request(url)
         response = urllib2.urlopen(request, timeout=30)
         response_result = response.read()
@@ -54,24 +58,25 @@ class heating(object):
         return response_result
 
 
-    def transferData(self):
+    def transfer_data(self):
         """
         This method transfers the data from uvr1611 to the api of same project to hosting server
         """
-        logmessage('+------------------ transfer data from uvr1611 ------------------------')
+        log_message('+------------------ transfer data from uvr1611 ------------------------')
         try:
-            data = self.getResonseResult(url_internal)
+            data = self.get_resonse_result(url_internal)
 
             if data == "[]":
                 message = "| OK: []"
             else:
                 message = "| response is not what expected"
-            logmessage(message)
+            log_message(message)
 
-        except:
+        except Exception:
             logger.error("| something went wrong while retrieving from %s" % url_internal)
 
-        logmessage('+----------------- transfer done -------------------------------------')
+        log_message('+----------------- transfer done -------------------------------------')
+
 
     def run(self):
         while True:
@@ -79,7 +84,7 @@ class heating(object):
             data = []
 
             # old way to transfer the data to uvr1611
-            self.transferData()
+            self.transfer_data()
 
             end = time()
 
@@ -88,6 +93,7 @@ class heating(object):
             if seconds_processing > 0:
                 sleep(to_sleep)  # sleeping time in seconds
 
+
 if __name__ == '__main__':
-    h = heating()
+    h = TransferData()
     h.run()

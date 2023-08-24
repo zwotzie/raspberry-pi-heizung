@@ -1,19 +1,19 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import simplejson
-import urllib2
 import datetime
-from time import gmtime, strftime, time, sleep
-import platform
-from ConfigParser import SafeConfigParser
 import logging
+import os
+import platform
+import sys
+import urllib2
+from ConfigParser import SafeConfigParser
 from logging import config
-import sys, os
-from ta.get_measurements import getMeasurementsFromUVR1611
+from time import gmtime, strftime, time, sleep
+
+import simplejson
+
 from ta.fieldlists import fields
-# import html
-# import json
 
 
 raspberry = False
@@ -53,29 +53,32 @@ logger = logging.getLogger('heizung')
 logger.propagate = False
 
 
-def logmessage(message):
+def log_message(message):
     if log2log == "True":
         logger.info(message)
     else:
         print(message)
 
-logmessage("+-----  S T A R T  ----------------------------------")
-logmessage("|   %r" % strftime("%Y-%m-%d %H:%M:%S", gmtime()))
-logmessage("+----------------------------------------------------")
-logmessage("| operation mode: %s" % operating_mode)
+
+log_message("+-----  S T A R T  ----------------------------------")
+log_message("|   %r" % strftime("%Y-%m-%d %H:%M:%S", gmtime()))
+log_message("+----------------------------------------------------")
+log_message("| operation mode: %s" % operating_mode)
 
 
-def getTimeDifferenceFromNow(timestamp):
+def get_time_difference_from_now(timestamp):
     """ :return minutes from now """
-    timeDiff = datetime.datetime.now() - datetime.datetime.fromtimestamp(timestamp)
-    return int(timeDiff.total_seconds() / 60)
+    time_diff = datetime.datetime.now() - datetime.datetime.fromtimestamp(timestamp)
+    return int(time_diff.total_seconds() / 60)
 
 
-class heating(object):
+class HeatingControl(object):
     def __init__(self):
         self.firing_start = None
 
-    def start_firing(self):
+
+    @staticmethod
+    def start_firing():
         """
         closes the relay which start the wood gasifier in firewood mode
         closes the relay which start/keep burning the wood gasifier in pellets mode
@@ -87,10 +90,11 @@ class heating(object):
         else:
             message = "doing : "
         message += "START_KESSEL"
-        logmessage(message)
+        log_message(message)
 
 
-    def stop_firing(self):
+    @staticmethod
+    def stop_firing():
         """
         stops burning in pellets mode, stop starting in firewood mode
         :return:
@@ -101,10 +105,11 @@ class heating(object):
         else:
             message = "doing : "
         message += "STOP_KESSEL"
-        logmessage(message)
+        log_message(message)
 
 
-    def getResonseResult(self, url):
+    @staticmethod
+    def get_resonse_result(url):
         request = urllib2.Request(url)
         response = urllib2.urlopen(request, timeout=30)
         response_result = response.read()
@@ -112,17 +117,15 @@ class heating(object):
         return response_result
 
 
-    def transferData(self):
+    def transfer_data(self):
         """
         This method transfers the data from uvr1611 to the api of same project to hosting server
         """
-        logmessage('+------------------ transfer data from uvr1611 ------------------------')
+        log_message('+------------------ transfer data from uvr1611 ------------------------')
         try:
             if raspberry:
-    #            response = urllib.urlopen(url_internal)
-    #            data = response.read()
 
-                data = self.getResonseResult(url_internal)
+                data = self.get_resonse_result(url_internal)
 
                 if data == "[]":
                     message = "| OK: []"
@@ -130,16 +133,16 @@ class heating(object):
                     message = "| response is not what expected"
             else:
                 message="| i'm not on raspberry..."
-            logmessage(message)
+            log_message(message)
 
-        except:
+        except Exception:
             logger.error("| something went wrong while retrieving from %s" % url_internal)
             logger.error("  Unexpected error:", sys.exc_info()[0])
 
-        logmessage('+----------------- transfer done -------------------------------------')
+        log_message('+----------------- transfer done -------------------------------------')
 
 
-    def pushDataToHosting(self, data):
+    def push_data_to_hosting(self, data):
         """
         Will send data to uvr1611 api to hosting server
         :param data:
@@ -148,21 +151,22 @@ class heating(object):
         pass
 
 
-    def getMeasurementsFromHttp(self):
-        response = self.getResonseResult(url)
+    def get_measurements_from_http(self):
+        response = self.get_resonse_result(url)
         data = ''
         if response:
             data = simplejson.loads(response)[-20:]
         return data
 
+
     def check_measurements(self, uvr_direct_data=None):
-        logmessage("-"*77)
+        log_message("-" * 77)
         dt_now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        logmessage("------------- New Test on Measurements: %s -----------------" % dt_now)
-        logmessage("-"*77)
+        log_message("------------- New Test on Measurements: %s -----------------" % dt_now)
+        log_message("-" * 77)
 
         if uvr_direct_data is None or len(uvr_direct_data) == 0:
-            data = self.getMeasurementsFromHttp()
+            data = self.get_measurements_from_http()
         else:
             data = [uvr_direct_data]
 
@@ -174,16 +178,16 @@ class heating(object):
         try:
             heizungs_dict = dict(zip(fields, data[-1]))
             for key, val in sorted(heizungs_dict.items()):
-                logmessage('  {0:25} : {1:}'.format(key, val))
-            logmessage('  {0:25} : {1:}'.format('datetime',
-                                            datetime.datetime.fromtimestamp(heizungs_dict['timestamp']).strftime(
+                log_message('  {0:25} : {1:}'.format(key, val))
+            log_message('  {0:25} : {1:}'.format('datetime',
+                                                 datetime.datetime.fromtimestamp(heizungs_dict['timestamp']).strftime(
                                                 '%Y-%m-%d %H:%M:%S')))
-            logmessage("-"*77)
+            log_message("-" * 77)
 
             for l in data:
                 heizungs_dict = dict(zip(fields, l))
 
-                minutes_ago_since_now = getTimeDifferenceFromNow(heizungs_dict['timestamp'])
+                minutes_ago_since_now = get_time_difference_from_now(heizungs_dict['timestamp'])
                 do_firing = "--"
                 spread = heizungs_dict['heizung_vl'] - heizungs_dict['heizung_rl']
 
@@ -215,7 +219,7 @@ class heating(object):
                     start_list.append(do_firing)
                     solar_list.append(heizungs_dict['solar_strahlung'])
 
-                logmessage("%r %r %r %.1f %r %r %r" % (
+                log_message("%r %r %r %.1f %r %r %r" % (
                       datetime.datetime.fromtimestamp(l[0]).strftime('%Y-%m-%d %H:%M:%S')
                     , heizungs_dict['heizung_d']
                     , heizungs_dict['d_heizung_pumpe']
@@ -225,9 +229,9 @@ class heating(object):
                     , l
                 ))
         except IndexError:
-            logmessage("-"*77)
-            logmessage("there is nothing to examine...")
-        logmessage("-"*77)
+            log_message("-" * 77)
+            log_message("there is nothing to examine...")
+        log_message("-" * 77)
 
         # check if wood gasifier start is necessary:
         if not start_list:
@@ -255,9 +259,9 @@ class heating(object):
         except ZeroDivisionError:
             # empty list
             pass
-        logmessage(simplejson.dumps({"t": dt_now, "mean solar": mean_solar, "solar_list_30m": solar_list}))
-        logmessage(simplejson.dumps({"t": dt_now, "firing_decision": return_do_firing, "start_list_30m": start_list, "fire_since": self.firing_start}))
-        logmessage("-" * 77)
+        log_message(simplejson.dumps({"t": dt_now, "mean solar": mean_solar, "solar_list_30m": solar_list}))
+        log_message(simplejson.dumps({"t": dt_now, "firing_decision": return_do_firing, "start_list_30m": start_list, "fire_since": self.firing_start}))
+        log_message("-" * 77)
 
         return return_do_firing
 
@@ -266,9 +270,9 @@ class heating(object):
 
         # this is only for operating_mode firewood!
         if len(sys.argv) > 1 and sys.argv[1] == 'ON':
-            logmessage("Start burn-off per comandline...")
+            log_message("Start burn-off per comandline...")
             self.start_firing()
-            logmessage("manually start done....")
+            log_message("manually start done....")
             sleep(5)
             # better wait some time?
             self.stop_firing()
@@ -302,7 +306,7 @@ class heating(object):
 
                         if self.firing_start:
                             message = "combustion time: %r hours" % (round((time() - self.firing_start)/3600, 1))
-                            logmessage(message)
+                            log_message(message)
 
                             self.firing_start = None
 
@@ -316,6 +320,7 @@ class heating(object):
                 if seconds_processing > 0:
                     sleep(to_sleep)  # sleeping time in seconds
 
+
 if __name__ == '__main__':
-    h = heating()
+    h = HeatingControl()
     h.run()
