@@ -3,6 +3,7 @@
 
 import platform
 
+
 raspberry = False
 if 'raspberrypi' in platform.uname():
     # global raspberry
@@ -17,6 +18,7 @@ if 'raspberrypi' in platform.uname():
 
 GPIO.setup(RelaisHeizung, GPIO.IN)
 state = GPIO.input(RelaisHeizung)
+
 
 if state == 0:
     print("Heizungsrelais ist aus")
