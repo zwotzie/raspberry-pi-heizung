@@ -9,11 +9,10 @@ from ConfigParser import SafeConfigParser
 from logging import config
 from time import gmtime, strftime, time, sleep
 
-
 # Set up a specific logger with our desired output level
 _config_path = os.path.abspath(os.path.dirname(sys.argv[0]))
 _config_file = _config_path + "/etc/heizung.conf"
-_config_logger = _config_path+'/etc/logging.conf'
+_config_logger = _config_path + '/etc/logging.conf'
 
 print("config heizung: ", _config_file)
 print("config logger : ", _config_logger)
@@ -21,7 +20,7 @@ print("config logger : ", _config_logger)
 parser = SafeConfigParser()
 parser.read(_config_file)
 
-url_internal    = parser.get('heizung', 'url_internal')
+url_internal = parser.get('heizung', 'url_internal')
 
 log2log = parser.get('heizung', 'logger')
 
@@ -49,14 +48,12 @@ class TransferData(object):
     def __init__(self):
         pass
 
-
     def get_resonse_result(self, url):
         request = urllib2.Request(url)
         response = urllib2.urlopen(request, timeout=30)
         response_result = response.read()
 
         return response_result
-
 
     def transfer_data(self):
         """
@@ -76,7 +73,6 @@ class TransferData(object):
             logger.error("| something went wrong while retrieving from %s" % url_internal)
 
         log_message('+----------------- transfer done -------------------------------------')
-
 
     def run(self):
         while True:
