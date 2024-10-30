@@ -132,9 +132,9 @@ def get_messurements(ip: str, reset: bool=False):
     api_data = {"date": f"{data_time}", "frame": 1}
     api_data.update({f"analog{k}": v for k, v in data["analog"].items()})
     api_data.update({f"digital{k}": v for k, v in data["digital"].items()})
-    api_data.update({f"speed{k}": "NULL" for k in range(1, 5)})
-    api_data.update({f"power{k}": "NULL" for k in range(1, 3)})
-    api_data.update({f"energy{k}": "NULL" for k in range(1, 3)})
+    api_data.update({f"speed{k}": "NULL" if v is None else v for k, v in range(1, 5)})
+    api_data.update({f"power{k}": "NULL" if v is None else v for k, v in range(1, 3)})
+    api_data.update({f"energy{k}": "NULL" if v is None else v for k, v in range(1, 3)})
 
     # print(field_list)
     return field_list, mapping, api_data

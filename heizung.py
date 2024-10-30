@@ -121,10 +121,10 @@ class FiringControl(object):
         request_url = api_url + "/databasewrapper/insertData"
 
         result = requests.post(request_url, json=[[data]])
-        log_message(f"{result.status_code} result: {result.text}")
+        log_message(f"insertData: {result.status_code} result: {result.text}")
 
         result = requests.get(api_url + "/databasewrapper/updateTables")
-        log_message(f"{result.status_code} result: {result.text}")
+        log_message(f"updateTables: {result.status_code} result: {result.text}")
 
     def get_current_measurements_from_blnet(self):
         field_list, mapping, api_data = get_messurements(ip=ip, reset=False)
@@ -136,7 +136,8 @@ class FiringControl(object):
         log_message(f"fl={field_list}")
         self.transfer_data(api_data)
         if len(self.measurements) > 30:
-            self.measurements.popitem()
+            oldest_measurement = min(self.measurements.keys())
+            del self.measurements[oldest_measurement]
 
     def check_measurements(self):
         dt_now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -148,7 +149,7 @@ class FiringControl(object):
             log_message(f"Error while fetching data from BLNET: {e}")
             return "OFF"
 
-        last_date = max(self.measurements.keys())
+        newest_date = max(self.measurements.keys())
         return_do_firing = "OFF"  # default
 
         start_list = []
@@ -282,7 +283,7 @@ class FiringControl(object):
 
                 seconds_processing = end - start
                 to_sleep = 60 - seconds_processing
-                if seconds_processing > 0:
+                if to_sleep > 0:
                     sleep(to_sleep)  # sleeping time in seconds
 
 
