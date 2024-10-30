@@ -29,13 +29,13 @@ if 'raspberrypi' in platform.uname():
     RelaisHeizung = 23
     GPIO.setmode(GPIO.BCM)
     GPIO.setwarnings(False)
-    GPIO.setup(RelaisHeizung,  GPIO.OUT)
-    GPIO.output(RelaisHeizung,  GPIO.LOW)
+    GPIO.setup(RelaisHeizung, GPIO.OUT)
+    GPIO.output(RelaisHeizung, GPIO.LOW)
 
 # Set up a specific logger with our desired output level
 _config_path = os.path.abspath(os.path.dirname(sys.argv[0]))
 _config_file = _config_path + "/etc/heizung.conf"
-_config_logger = _config_path+'/etc/logging.conf'
+_config_logger = _config_path + '/etc/logging.conf'
 
 print("config heizung: ", _config_file)
 print("config logger : ", _config_logger)
@@ -78,10 +78,11 @@ def get_time_difference_from_now(timestamp):
     return int(time_diff.total_seconds() / 60)
 
 
-class HeatingControl(object):
+class FiringControl(object):
+
     def __init__(self):
         self.firing_start = None
-        self.messurements = {}
+        self.measurements = {}
 
     @staticmethod
     def start_firing():
@@ -98,7 +99,6 @@ class HeatingControl(object):
         message += "START_KESSEL"
         log_message(message)
 
-
     @staticmethod
     def stop_firing():
         """
@@ -113,7 +113,6 @@ class HeatingControl(object):
         message += "STOP_KESSEL"
         log_message(message)
 
-
     def transfer_data(self, data):
         """
         This method transfers the data from uvr1611 to the api of same project to hosting server
@@ -127,18 +126,17 @@ class HeatingControl(object):
         result = requests.get(api_url + "/databasewrapper/updateTables")
         log_message(f"{result.status_code} result: {result.text}")
 
-
     def get_current_measurements_from_blnet(self):
         field_list, mapping, api_data = get_messurements(ip=ip, reset=False)
-        self.messurements[mapping['timestamp']] = {
+        self.measurements[mapping['timestamp']] = {
             "field_list": field_list,
             "mapping": mapping
         }
         log_message(f"dh={mapping}")
         log_message(f"fl={field_list}")
         self.transfer_data(api_data)
-        if len(self.messurements) > 30:
-            self.messurements.popitem()
+        if len(self.measurements) > 30:
+            self.measurements.popitem()
 
     def check_measurements(self):
         dt_now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -150,21 +148,19 @@ class HeatingControl(object):
             log_message(f"Error while fetching data from BLNET: {e}")
             return "OFF"
 
-        last_date = max(self.messurements.keys())
+        last_date = max(self.measurements.keys())
         return_do_firing = "OFF"  # default
 
         start_list = []
         solar_list = []
 
         try:
-            for messurement_date in self.messurements.keys():
-                data = self.messurements[messurement_date]['field_list']
-                heizungs_dict = self.messurements[messurement_date]['mapping']
-
+            for messurement_date in self.measurements.keys():
+                heizungs_dict = self.measurements[messurement_date]['mapping']
 
                 minutes_ago_since_now = get_time_difference_from_now(heizungs_dict['timestamp'])
                 do_firing = "--"
-                spread = heizungs_dict['heizung_vl'] - heizungs_dict['heizung_rl']
+                # spread = heizungs_dict['heizung_vl'] - heizungs_dict['heizung_rl']
 
                 if heizungs_dict['speicher_3_kopf'] < 39 \
                         and heizungs_dict['speicher_4_mitte'] < 35 \
@@ -183,7 +179,7 @@ class HeatingControl(object):
                 #         and heizungs_dict['speicher_5_boden'] < 30 \
                 #         and spread <= 2:
                 #         # if heizungs_dict['heizung_d'] == 0:
-                #         #if minutes_ago_since_now < 15: # only if messurements are not so long ago
+                #         #if minutes_ago_since_now < 15: # only if measurements are not so long ago
                 #     do_firing = "ON"
 
                 # this is enough energy!
@@ -228,14 +224,15 @@ class HeatingControl(object):
         # if the mean of the solar radiation values is big enough, shut off firing
         mean_solar = 0
         try:
-            mean_solar = sum(solar_list)/len(solar_list)
+            mean_solar = sum(solar_list) / len(solar_list)
             if mean_solar > 400:
                 return_do_firing = "OFF"
         except ZeroDivisionError:
             # empty list
             pass
         log_message(json.dumps({"t": dt_now, "mean solar": mean_solar, "solar_list_30m": solar_list}))
-        log_message(json.dumps({"t": dt_now, "firing_decision": return_do_firing, "start_list_30m": start_list, "fire_since": self.firing_start}))
+        log_message(json.dumps({"t": dt_now, "firing_decision": return_do_firing, "start_list_30m": start_list,
+                                "fire_since": self.firing_start}))
 
         return return_do_firing
 
@@ -273,12 +270,12 @@ class HeatingControl(object):
                         self.stop_firing()
 
                         if self.firing_start:
-                            message = "combustion time: %r hours" % (round((time() - self.firing_start)/3600, 1))
+                            message = "combustion time: %r hours" % (round((time() - self.firing_start) / 3600, 1))
                             log_message(message)
 
                             self.firing_start = None
 
-                    else: # result == '--'
+                    else:  # result == '--'
                         pass
 
                 end = time()
@@ -290,5 +287,5 @@ class HeatingControl(object):
 
 
 if __name__ == '__main__':
-    h = HeatingControl()
+    h = FiringControl()
     h.run()
