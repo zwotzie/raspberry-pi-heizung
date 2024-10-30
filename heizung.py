@@ -50,7 +50,7 @@ blnet_host      = config['heizung'].get('blnet_host')
 operating_mode  = config['heizung'].get('operating_mode')
 ip              = socket.gethostbyname(blnet_host)
 
-log2log = config.get('heizung', 'logger')
+log2log = config['heizung'].get('logger')
 
 print("print2logger  : ", log2log)
 
