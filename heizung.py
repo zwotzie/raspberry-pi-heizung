@@ -120,11 +120,10 @@ class FiringControl(object):
         log_message('+------------------ transfer data uvr1611=>API ------------------------')
         request_url = api_url + "/databasewrapper/insertData"
 
-        result = requests.post(request_url, json=[[data]])
-        log_message(f"insertData: {result.status_code} result: {result.text}")
-
+        result_insert = requests.post(request_url, json=[[data]])
         result = requests.get(api_url + "/databasewrapper/updateTables")
-        log_message(f"updateTables: {result.status_code} result: {result.text}")
+
+        log_message(f"insertData: {result_insert.status_code} result: {result_insert.text} :: updateTables: {result.status_code}")
 
     def get_current_measurements_from_blnet(self):
         field_list, mapping, api_data = get_messurements(ip=ip, reset=False)
@@ -162,7 +161,7 @@ class FiringControl(object):
                 heizungs_dict = self.measurements[messurement_date]['mapping']
 
                 minutes_ago_since_now = get_time_difference_from_now(heizungs_dict['timestamp'])
-                do_firing = "--"
+                do_firing = "-"
                 # spread = heizungs_dict['heizung_vl'] - heizungs_dict['heizung_rl']
 
                 if heizungs_dict['speicher_3_kopf'] < 39 \
@@ -208,31 +207,22 @@ class FiringControl(object):
         log_message("-" * 77)
 
         # check if wood gasifier start is necessary:
-        if not start_list:
-            # exceptions if it is between 0:00 and 0:10!
-            if int(strftime("%H")) == 0 and int(strftime("%M")) <= 10:
-                return_do_firing = "--"  # no values available :(
-                # Todo build an api for last 30 Minutes values!
-            else:
-                return_do_firing = "OFF"
-        elif "OFF" in start_list or not start_list:
+        if "OFF" in start_list or not start_list:
             return_do_firing = "OFF"
         elif "ON" in start_list:
             return_do_firing = "ON"
         else:
-            return_do_firing = "--"
+            return_do_firing = "-"
 
         # for a very sunny day exeception should be made here:
         # be optimistic that enough hot water will be produced
         # if the mean of the solar radiation values is big enough, shut off firing
         mean_solar = 0
-        try:
-            mean_solar = sum(solar_list) / len(solar_list)
-            if mean_solar > 400:
-                return_do_firing = "OFF"
-        except ZeroDivisionError:
-            # empty list
-            pass
+
+        mean_solar = sum(solar_list) / len(solar_list)
+        if mean_solar > 400:
+            return_do_firing = "OFF"
+
         log_message(json.dumps({"t": dt_now, "mean solar": mean_solar, "solar_list_30m": solar_list}))
         log_message(json.dumps({"t": dt_now, "firing_decision": return_do_firing, "start_list_30m": start_list,
                                 "fire_since": self.firing_start}))
