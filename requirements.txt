@@ -1,7 +1,8 @@
 requests
 gpio
+RPi.GPIO
 # beautifulsoup4
 # pandas
 # numpy
-RPi
-pi
+# RPi
+# pi
