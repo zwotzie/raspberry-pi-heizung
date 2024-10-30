@@ -44,16 +44,26 @@ log_message("+----------------------------------------------------")
 log_message("url_internal: %s" % url_internal)
 
 
+def get_response_result(url):
+    """
+    Fetches the response from the given URL.
+
+    Args:
+    url (str): The URL to fetch the response from.
+
+    Returns:
+    str: The response obtained from the URL.
+    """
+    request = urllib2.Request(url)
+    response = urllib2.urlopen(request, timeout=30)
+    response_result = response.read()
+
+    return response_result
+
+
 class TransferData(object):
     def __init__(self):
         pass
-
-    def get_resonse_result(self, url):
-        request = urllib2.Request(url)
-        response = urllib2.urlopen(request, timeout=30)
-        response_result = response.read()
-
-        return response_result
 
     def transfer_data(self):
         """
@@ -61,7 +71,7 @@ class TransferData(object):
         """
         log_message('+------------------ transfer data from uvr1611 ------------------------')
         try:
-            data = self.get_resonse_result(url_internal)
+            data = get_response_result(url_internal)
 
             if data == "[]":
                 message = "| OK: []"
