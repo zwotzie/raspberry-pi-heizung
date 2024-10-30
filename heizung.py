@@ -130,10 +130,12 @@ class FiringControl(object):
         field_list, mapping, api_data = get_messurements(ip=ip, reset=False)
         self.measurements[mapping['timestamp']] = {
             "field_list": field_list,
-            "mapping": mapping
+            "mapping": mapping,
+            "api_data": api_data
         }
         log_message(f"dh={mapping}")
         log_message(f"fl={field_list}")
+        log_message(f"ad={api_data}")
         self.transfer_data(api_data)
         if len(self.measurements) > 30:
             oldest_measurement = min(self.measurements.keys())

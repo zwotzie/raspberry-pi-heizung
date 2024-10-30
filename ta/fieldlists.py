@@ -62,8 +62,8 @@ fields_dict_analog = {
 fields_dict_digital = {
     # digital values
     '2:speed': 'kessel_d_ladepumpe',
-    '6:speed': 'heizung_d',
-    '7:speed': 'solar_d_ladepumpe',
+    '3:speed': 'heizung_d',  # '6:speed': 'heizung_d',
+    '4:speed': 'solar_d_ladepumpe',  # '7:speed': 'solar_d_ladepumpe',
     '6': 'd_heizung_pumpe',
     '2': 'd_kessel_ladepumpe',
     '5': 'd_kessel_freigabe',
@@ -126,15 +126,27 @@ def get_messurements(ip: str, reset: bool=False):
         except KeyError:
             pass
             # print(f"{key} : {value} : not found")
+    # print("SPEED")
+    # '2:speed': 'kessel_d_ladepumpe',
+    # '6:speed': 'heizung_d',
+    # '7:speed': 'solar_d_ladepumpe',
+    for key, value in data['speed'].items():
+        try:
+            field_name = fields_dict_digital[f"{key}:speed"]
+            # print(f"{key} : {value} : {field_name}")
+            mapping[field_name] = value
+        except KeyError:
+            pass
+            # print(f"{key} : {value} : not found")
     # print(mapping)
     field_list = [mapping[field] if field in mapping else 0 for field in fields]
 
     api_data = {"date": f"{data_time}", "frame": 1}
     api_data.update({f"analog{k}": v for k, v in data["analog"].items()})
     api_data.update({f"digital{k}": v for k, v in data["digital"].items()})
-    api_data.update({f"speed{k}": "NULL" if v is None else v for k, v in range(1, 5)})
-    api_data.update({f"power{k}": "NULL" if v is None else v for k, v in range(1, 3)})
-    api_data.update({f"energy{k}": "NULL" if v is None else v for k, v in range(1, 3)})
+    api_data.update({f"speed{k}": "NULL" if v is None else v for k, v in data["speed"].items()})
+    api_data.update({f"power{k}": "NULL" if v is None else v for k, v in data["power"].items()})
+    api_data.update({f"energy{k}": "NULL" if v is None else v for k, v in data["energy"].items()})
 
     # print(field_list)
     return field_list, mapping, api_data
