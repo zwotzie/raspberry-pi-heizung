@@ -3,5 +3,5 @@ gpio
 beautifulsoup4
 pandas
 numpy
-simplejson
 RPi
+pi

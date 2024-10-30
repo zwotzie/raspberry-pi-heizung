@@ -2,19 +2,22 @@
 # -*- coding: utf-8 -*-
 
 import datetime
+import json
 import logging
 import os
 import platform
+import socket
 import sys
-import urllib2
-from ConfigParser import SafeConfigParser
+import tomllib
 from logging import config
-from time import gmtime, strftime, time, sleep
+from time import gmtime
+from time import sleep
+from time import strftime
+from time import time
 
-import simplejson
+import requests
 
-from ta.fieldlists import fields
-
+from ta.fieldlists import get_messurements
 
 raspberry = False
 if 'raspberrypi' in platform.uname():
@@ -37,14 +40,17 @@ _config_logger = _config_path+'/etc/logging.conf'
 print("config heizung: ", _config_file)
 print("config logger : ", _config_logger)
 
-parser = SafeConfigParser()
-parser.read(_config_file)
-url             = parser.get('heizung', 'url')
-url_internal    = parser.get('heizung', 'url_internal')
-blnet_host      = parser.get('heizung', 'blnet_host')
-operating_mode  = parser.get('heizung', 'operating_mode')
+with open(_config_file, 'rb') as f:
+    config = tomllib.load(f)
 
-log2log = parser.get('heizung', 'logger')
+url             = config['heizung'].get('url')
+api_url         = config['heizung'].get('api_url')
+url_internal    = config['heizung'].get('url_internal')
+blnet_host      = config['heizung'].get('blnet_host')
+operating_mode  = config['heizung'].get('operating_mode')
+ip              = socket.gethostbyname(blnet_host)
+
+log2log = config.get('heizung', 'logger')
 
 print("print2logger  : ", log2log)
 
@@ -68,14 +74,14 @@ log_message("| operation mode: %s" % operating_mode)
 
 def get_time_difference_from_now(timestamp):
     """ :return minutes from now """
-    time_diff = datetime.datetime.now() - datetime.datetime.fromtimestamp(timestamp)
+    time_diff = datetime.datetime.now() - timestamp
     return int(time_diff.total_seconds() / 60)
 
 
 class HeatingControl(object):
     def __init__(self):
         self.firing_start = None
-
+        self.messurements = {}
 
     @staticmethod
     def start_firing():
@@ -108,84 +114,53 @@ class HeatingControl(object):
         log_message(message)
 
 
-    @staticmethod
-    def get_resonse_result(url):
-        request = urllib2.Request(url)
-        response = urllib2.urlopen(request, timeout=30)
-        response_result = response.read()
-
-        return response_result
-
-
-    def transfer_data(self):
+    def transfer_data(self, data):
         """
         This method transfers the data from uvr1611 to the api of same project to hosting server
         """
-        log_message('+------------------ transfer data from uvr1611 ------------------------')
-        try:
-            if raspberry:
+        log_message('+------------------ transfer data uvr1611=>API ------------------------')
+        request_url = api_url + "/databasewrapper/insertData"
 
-                data = self.get_resonse_result(url_internal)
+        result = requests.post(request_url, json=[[data]])
+        log_message(f"{result.status_code} result: {result.text}")
 
-                if data == "[]":
-                    message = "| OK: []"
-                else:
-                    message = "| response is not what expected"
-            else:
-                message="| i'm not on raspberry..."
-            log_message(message)
-
-        except Exception:
-            logger.error("| something went wrong while retrieving from %s" % url_internal)
-            logger.error("  Unexpected error:", sys.exc_info()[0])
-
-        log_message('+----------------- transfer done -------------------------------------')
+        result = requests.get(api_url + "/databasewrapper/updateTables")
+        log_message(f"{result.status_code} result: {result.text}")
 
 
-    def push_data_to_hosting(self, data):
-        """
-        Will send data to uvr1611 api to hosting server
-        :param data:
-        :return:
-        """
-        pass
+    def get_current_measurements_from_blnet(self):
+        field_list, mapping, api_data = get_messurements(ip=ip, reset=False)
+        self.messurements[mapping['timestamp']] = {
+            "field_list": field_list,
+            "mapping": mapping
+        }
+        log_message(f"dh={mapping}")
+        log_message(f"fl={field_list}")
+        self.transfer_data(api_data)
+        if len(self.messurements) > 30:
+            self.messurements.popitem()
 
-
-    def get_measurements_from_http(self):
-        response = self.get_resonse_result(url)
-        data = ''
-        if response:
-            data = simplejson.loads(response)[-20:]
-        return data
-
-
-    def check_measurements(self, uvr_direct_data=None):
-        log_message("-" * 77)
+    def check_measurements(self):
         dt_now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        log_message("------------- New Test on Measurements: %s -----------------" % dt_now)
-        log_message("-" * 77)
+        log_message("=" * 99)
+        log_message(f"New test on measurements: {dt_now}")
+        try:
+            self.get_current_measurements_from_blnet()
+        except Exception as e:
+            log_message(f"Error while fetching data from BLNET: {e}")
+            return "OFF"
 
-        if uvr_direct_data is None or len(uvr_direct_data) == 0:
-            data = self.get_measurements_from_http()
-        else:
-            data = [uvr_direct_data]
-
+        last_date = max(self.messurements.keys())
         return_do_firing = "OFF"  # default
 
         start_list = []
         solar_list = []
 
         try:
-            heizungs_dict = dict(zip(fields, data[-1]))
-            for key, val in sorted(heizungs_dict.items()):
-                log_message('  {0:25} : {1:}'.format(key, val))
-            log_message('  {0:25} : {1:}'.format('datetime',
-                                                 datetime.datetime.fromtimestamp(heizungs_dict['timestamp']).strftime(
-                                                '%Y-%m-%d %H:%M:%S')))
-            log_message("-" * 77)
+            for messurement_date in self.messurements.keys():
+                data = self.messurements[messurement_date]['field_list']
+                heizungs_dict = self.messurements[messurement_date]['mapping']
 
-            for l in data:
-                heizungs_dict = dict(zip(fields, l))
 
                 minutes_ago_since_now = get_time_difference_from_now(heizungs_dict['timestamp'])
                 do_firing = "--"
@@ -219,15 +194,15 @@ class HeatingControl(object):
                     start_list.append(do_firing)
                     solar_list.append(heizungs_dict['solar_strahlung'])
 
-                log_message("%r %r %r %.1f %r %r %r" % (
-                      datetime.datetime.fromtimestamp(l[0]).strftime('%Y-%m-%d %H:%M:%S')
-                    , heizungs_dict['heizung_d']
-                    , heizungs_dict['d_heizung_pumpe']
-                    , spread
-                    , do_firing
-                    , minutes_ago_since_now
-                    , l
-                ))
+                # log_message("%r, %r, %.1f, %r, %r, data=%r" % (
+                #       heizungs_dict['timestamp']
+                #     # , heizungs_dict['heizung_d']  # not available
+                #     , heizungs_dict['d_heizung_pumpe']
+                #     , spread
+                #     , do_firing
+                #     , minutes_ago_since_now
+                #     , data
+                # ))
         except IndexError:
             log_message("-" * 77)
             log_message("there is nothing to examine...")
@@ -259,9 +234,8 @@ class HeatingControl(object):
         except ZeroDivisionError:
             # empty list
             pass
-        log_message(simplejson.dumps({"t": dt_now, "mean solar": mean_solar, "solar_list_30m": solar_list}))
-        log_message(simplejson.dumps({"t": dt_now, "firing_decision": return_do_firing, "start_list_30m": start_list, "fire_since": self.firing_start}))
-        log_message("-" * 77)
+        log_message(json.dumps({"t": dt_now, "mean solar": mean_solar, "solar_list_30m": solar_list}))
+        log_message(json.dumps({"t": dt_now, "firing_decision": return_do_firing, "start_list_30m": start_list, "fire_since": self.firing_start}))
 
         return return_do_firing
 
@@ -280,14 +254,8 @@ class HeatingControl(object):
         else:
             while True:
                 start = time()
-                data = []
 
-                # moved to extra process transfer_blnet_data.py
-                # old way to transfer the data to uvr1611
-                # if raspberry:
-                #    self.transferData()
-
-                result = self.check_measurements(data)
+                result = self.check_measurements()
 
                 if operating_mode == 'firewood':
                     if result == "ON":
@@ -316,7 +284,7 @@ class HeatingControl(object):
                 end = time()
 
                 seconds_processing = end - start
-                to_sleep = 120 - seconds_processing
+                to_sleep = 60 - seconds_processing
                 if seconds_processing > 0:
                     sleep(to_sleep)  # sleeping time in seconds
 
