@@ -91,12 +91,12 @@ class FiringControl(object):
         closes the relay which start/keep burning the wood gasifier in pellets mode
         :return:
         """
-        message = ""
+        message = "START_KESSEL: "
         if raspberry:
+            message += " set RelaisHeizung-GPIO to HIGH"
             GPIO.output(RelaisHeizung, GPIO.HIGH)
         else:
-            message = "doing : "
-        message += "START_KESSEL"
+            message += "test only (no raspberry)"
         log_message(message)
 
     @staticmethod
@@ -105,25 +105,23 @@ class FiringControl(object):
         stops burning in pellets mode, stop starting in firewood mode
         :return:
         """
-        message = ""
+        message = "STOP_KESSEL: "
         if raspberry:
+            message += " set RelaisHeizung-GPIO to LOW"
             GPIO.output(RelaisHeizung, GPIO.LOW)
         else:
-            message = "doing : "
-        message += "STOP_KESSEL"
+            message += "test only (no raspberry)"
         log_message(message)
 
     def transfer_data(self, data):
         """
         This method transfers the data from uvr1611 to the api of same project to hosting server
         """
-        log_message('+------------------ transfer data uvr1611=>API ------------------------')
         request_url = api_url + "/databasewrapper/insertData"
-
         result_insert = requests.post(request_url, json=[[data]])
         result = requests.get(api_url + "/databasewrapper/updateTables")
 
-        log_message(f"insertData: {result_insert.status_code} result: {result_insert.text} :: updateTables: {result.status_code}")
+        log_message(f"transfer data uvr1611=>API: insertData: {result_insert.status_code} result: {result_insert.text} :: updateTables: {result.status_code}")
 
     def get_current_measurements_from_blnet(self):
         field_list, mapping, api_data = get_messurements(ip=ip, reset=False)
@@ -204,9 +202,8 @@ class FiringControl(object):
                 #     , data
                 # ))
         except IndexError:
-            log_message("-" * 77)
-            log_message("there is nothing to examine...")
-        log_message("-" * 77)
+            log_message("ERROR: there is nothing to examine???")
+
 
         # check if wood gasifier start is necessary:
         api_data['digital1'] = 0
