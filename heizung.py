@@ -217,7 +217,7 @@ class FiringControl(object):
             api_data['digital1'] = 1
         else:
             return_do_firing = "-"
-        # self.transfer_data(api_data)
+        self.transfer_data(api_data)
         # for a very sunny day exeception should be made here:
         # be optimistic that enough hot water will be produced
         # if the mean of the solar radiation values is big enough, shut off firing
