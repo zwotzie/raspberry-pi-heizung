@@ -135,18 +135,20 @@ class FiringControl(object):
         log_message(f"dh={mapping}")
         log_message(f"fl={field_list}")
         log_message(f"ad={api_data}")
-        self.transfer_data(api_data)
+
         if len(self.measurements) > 30:
             oldest_measurement = min(self.measurements.keys())
             del self.measurements[oldest_measurement]
+        return field_list, mapping, api_data
 
     def check_measurements(self):
         dt_now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         log_message("=" * 99)
         log_message(f"New test on measurements: {dt_now}")
         try:
-            self.get_current_measurements_from_blnet()
+            field_list, mapping, api_data = self.get_current_measurements_from_blnet()
         except Exception as e:
+            # raise
             log_message(f"Error while fetching data from BLNET: {e}")
             return "OFF"
 
@@ -207,13 +209,15 @@ class FiringControl(object):
         log_message("-" * 77)
 
         # check if wood gasifier start is necessary:
+        api_data['digital1'] = 0
         if "OFF" in start_list or not start_list:
             return_do_firing = "OFF"
         elif "ON" in start_list:
             return_do_firing = "ON"
+            api_data['digital1'] = 1
         else:
             return_do_firing = "-"
-
+        # self.transfer_data(api_data)
         # for a very sunny day exeception should be made here:
         # be optimistic that enough hot water will be produced
         # if the mean of the solar radiation values is big enough, shut off firing
