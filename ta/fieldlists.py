@@ -64,6 +64,7 @@ fields_dict_digital = {
     '2:speed': 'kessel_d_ladepumpe',
     '3:speed': 'heizung_d',  # '6:speed': 'heizung_d',
     '4:speed': 'solar_d_ladepumpe',  # '7:speed': 'solar_d_ladepumpe',
+    # '1': 'start_fire',
     '6': 'd_heizung_pumpe',
     '2': 'd_kessel_ladepumpe',
     '5': 'd_kessel_freigabe',
