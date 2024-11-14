@@ -1,12 +1,26 @@
 # Raspberry Pi steuert Heizungsanforderung
+This project runs under Raspberry PI bookworms and is a simple python 3.11 script to control the heating system of my house.
 
-* don't forget to "chmod 755 heizung.py" so that the programm is executable
+* `apt install mpg321` for playing mp3 files
+* `python3 -m venv <somewhere>` and `source <somewhere>/bin/activate` to create a virtual environment
+* use this virtual environment to install the requirements: `pip install -r requirements.txt`
+* `/path/to/venv/python /path/to/heizung.py` to start the program -> supervisor/conf.d/heizung.conf
 
 To run the program as a "daemon", I decided to use 
 supervisor http://supervisord.org. The advantages are awesome: 
 
 * supervisord will start the program automatically - also after reboot 
 * take care of restart, if the script exited unexpected!
+
+# soundcard
+Configure right sound card to play. For me it is card 1.
+
+```
+@raspberrypi:~ $ cat .asoundrc 
+
+defaults.pcm.card 1
+defaults.ctl.card 1
+```
 
 # GpIO
 Gpio 23 closes the Relais which starts the wooden fire heating.
