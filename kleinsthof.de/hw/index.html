@@ -3,13 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <title>Super Heizung hier!</title>
+    <style>
+        body {
+            background-color: black;
+            color: white;
+        }
+    </style>
 </head>
 <body>
-<h1>Super Heizung hier ;)</h1>
+<h1>Heizung: 7 Tagesverlauf</h1>
 <div id='Pufferspeicher' style="height: 500px;"><!-- Plotly chart will/should be drawn inside this DIV-->    </div>
 <div id='Solar' style="height: 500px;"><!-- Plotly chart will/should be drawn inside this DIV-->    </div>
 <div id='Heizung' style="height: 500px;"><!-- Plotly chart will/should be drawn inside this DIV-->    </div>
 <div id='Wärmeerzeuger' style="height: 500px;"><!-- Plotly chart will/should be drawn inside this DIV-->    </div>
+<div id='digitals' style="height: 500px;"><!-- Plotly chart will/should be drawn inside this DIV-->    </div>
 
 <!-- Load plotly.js -->
 <script type="text/javascript" src='https://cdn.plot.ly/plotly-latest.min.js'></script>
