@@ -140,15 +140,19 @@ class FiringControl(object):
         return field_list, mapping, api_data
 
     def check_measurements(self):
-        dt_now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        log_message("=" * 99)
-        log_message(f"New test on measurements: {dt_now}")
-        try:
-            field_list, mapping, api_data = self.get_current_measurements_from_blnet()
-        except Exception as e:
-            # raise
-            log_message(f"Error while fetching data from BLNET: {e}")
-            return "OFF"
+        for attempt in range(10):
+            dt_now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            log_message("=" * 99)
+            log_message(f"New test on measurements: {dt_now}")
+            try:
+                field_list, mapping, api_data = self.get_current_measurements_from_blnet()
+                break
+            except Exception as e:
+                # raise
+                log_message(f"#{attempt} Error while fetching data from BLNET: {e}")
+                if attempt == 9:
+                    return "OFF"
+                sleep(30)
 
         newest_date = max(self.measurements.keys())
         return_do_firing = "OFF"  # default
