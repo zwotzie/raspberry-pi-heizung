@@ -2,4 +2,4 @@
 
 sudo supervisorctl stop heizung
 
-python RelaisStatus.py 
+venv/bin/python RelaisStatus.py
