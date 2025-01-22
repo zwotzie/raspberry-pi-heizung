@@ -117,11 +117,14 @@ class FiringControl(object):
         """
         This method transfers the data from uvr1611 to the api of same project to hosting server
         """
-        request_url = api_url + "/databasewrapper/insertData"
-        result_insert = requests.post(request_url, json=[[data]])
-        result = requests.get(api_url + "/databasewrapper/updateTables")
-
-        log_message(f"transfer data uvr1611=>API: insertData: {result_insert.status_code} result: {result_insert.text} :: updateTables: {result.status_code}")
+        try:
+            result_insert = requests.post(api_url + "/databasewrapper/insertData", json=[[data]], timeout=60)
+            result = requests.get(api_url + "/databasewrapper/updateTables", timeout=60)
+            log_message(f"transfer data uvr1611=>API: insertData: {result_insert.status_code} result: {result_insert.text} :: updateTables: {result.status_code}")
+        except requests.exceptions.Timeout:
+            log_message("Error: Request timed out")
+        except requests.exceptions.RequestException as e:
+            log_message(f"Error: (RequestException) {e}")
 
     def get_current_measurements_from_blnet(self):
         field_list, mapping, api_data = get_messurements(ip=ip, reset=False)
@@ -140,6 +143,11 @@ class FiringControl(object):
         return field_list, mapping, api_data
 
     def check_measurements(self):
+        api_data = {}
+        return_do_firing = "OFF"  # default
+        start_list = []
+        solar_list = []
+
         for attempt in range(10):
             dt_now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             log_message("=" * 99)
@@ -155,10 +163,6 @@ class FiringControl(object):
                 sleep(30)
 
         newest_date = max(self.measurements.keys())
-        return_do_firing = "OFF"  # default
-
-        start_list = []
-        solar_list = []
 
         try:
             for messurement_date in self.measurements.keys():
@@ -172,12 +176,9 @@ class FiringControl(object):
                         and heizungs_dict['speicher_4_mitte'] < 35 \
                         and heizungs_dict['speicher_5_boden'] < 32:
                     do_firing = "ON"
-                elif heizungs_dict['speicher_1_kopf'] < 45 \
-                        and heizungs_dict['speicher_1_kopf'] < 45 \
-                        and heizungs_dict['speicher_2_kopf'] < 45 \
-                        and heizungs_dict['speicher_3_kopf'] < 45 \
-                        and heizungs_dict['speicher_4_mitte'] < 45 \
-                        and heizungs_dict['speicher_5_boden'] < 45:
+                elif all(heizungs_dict[key] < 45 for key in
+                         ['speicher_1_kopf', 'speicher_2_kopf', 'speicher_3_kopf',
+                          'speicher_4_mitte', 'speicher_5_boden']):
                     do_firing = "ON"
 
                 # elif heizungs_dict['speicher_3_kopf'] < 35 \
@@ -196,43 +197,31 @@ class FiringControl(object):
                     start_list.append(do_firing)
                     solar_list.append(heizungs_dict['solar_strahlung'])
 
-                # log_message("%r, %r, %.1f, %r, %r, data=%r" % (
-                #       heizungs_dict['timestamp']
-                #     # , heizungs_dict['heizung_d']  # not available
-                #     , heizungs_dict['d_heizung_pumpe']
-                #     , spread
-                #     , do_firing
-                #     , minutes_ago_since_now
-                #     , data
-                # ))
         except IndexError:
             log_message("ERROR: there is nothing to examine???")
 
+        finally:
+            # check if wood gasifier start is necessary:
+            api_data['digital1'] = 1 if self.firing_start else 0
+            if "OFF" in start_list or not start_list:
+                return_do_firing = "OFF"
+            elif "ON" in start_list:
+                return_do_firing = "ON"
+            else:
+                return_do_firing = "-"
+            self.transfer_data(api_data)
 
-        # check if wood gasifier start is necessary:
-        api_data['digital1'] = 0
-        if "OFF" in start_list or not start_list:
-            return_do_firing = "OFF"
-        elif "ON" in start_list:
-            return_do_firing = "ON"
-            api_data['digital1'] = 1
-        else:
-            return_do_firing = "-"
-        self.transfer_data(api_data)
-        # for a very sunny day exeception should be made here:
-        # be optimistic that enough hot water will be produced
-        # if the mean of the solar radiation values is big enough, shut off firing
-        mean_solar = 0
+            # for a very sunny day exeception should be made here:
+            # be optimistic that enough hot water will be produced
+            # if the mean of the solar radiation values is big enough, shut off firing
+            mean_solar = sum(solar_list) / len(solar_list)
+            if mean_solar > 400:
+                return_do_firing = "OFF"
 
-        mean_solar = sum(solar_list) / len(solar_list)
-        if mean_solar > 400:
-            return_do_firing = "OFF"
-
-        log_message(json.dumps({"t": dt_now, "mean solar": mean_solar, "solar_list_30m": solar_list}))
-        log_message(json.dumps({"t": dt_now, "firing_decision": return_do_firing, "start_list_30m": start_list,
-                                "fire_since": self.firing_start}))
-
-        return return_do_firing
+            log_message(json.dumps({"t": dt_now, "mean solar": mean_solar, "solar_list_30m": solar_list}))
+            log_message(json.dumps({"t": dt_now, "firing_decision": return_do_firing, "start_list_30m": start_list,
+                                    "fire_since": self.firing_start}))
+            return return_do_firing
 
     def run(self):
         # blnet = getMeasurementsFromUVR1611(blnet_host, timeout=(3.05, 5), password=None)
@@ -255,8 +244,10 @@ class FiringControl(object):
                 if operating_mode == 'firewood':
                     if result == "ON":
                         self.start_firing()
+                        self.firing_start = time()
                     else:
                         self.stop_firing()
+                        self.firing_start = None
 
                 elif operating_mode == 'pellets':
                     if result == "ON":
