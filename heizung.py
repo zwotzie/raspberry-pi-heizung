@@ -122,9 +122,9 @@ class FiringControl(object):
             result = requests.get(api_url + "/databasewrapper/updateTables", timeout=60)
             log_message(f"transfer data uvr1611=>API: insertData: {result_insert.status_code} result: {result_insert.text} :: updateTables: {result.status_code}")
         except requests.exceptions.Timeout:
-            log_message("Error: Request timed out")
+            log_message("ERROR: Request timed out")
         except requests.exceptions.RequestException as e:
-            log_message(f"Error: (RequestException) {e}")
+            log_message(f"ERROR: (RequestException) {e}")
 
     def get_current_measurements_from_blnet(self):
         field_list, mapping, api_data = get_messurements(ip=ip, reset=False)
@@ -195,7 +195,7 @@ class FiringControl(object):
 
                 if minutes_ago_since_now <= 30:
                     start_list.append(do_firing)
-                    solar_list.append(heizungs_dict['solar_strahlung'])
+                    solar_list.append(int(heizungs_dict['solar_strahlung']))
 
         except IndexError:
             log_message("ERROR: there is nothing to examine???")
@@ -214,7 +214,7 @@ class FiringControl(object):
             # for a very sunny day exeception should be made here:
             # be optimistic that enough hot water will be produced
             # if the mean of the solar radiation values is big enough, shut off firing
-            mean_solar = sum(solar_list) / len(solar_list)
+            mean_solar = sum(solar_list) // len(solar_list)
             if mean_solar > 400:
                 return_do_firing = "OFF"
 
