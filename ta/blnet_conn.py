@@ -12,6 +12,7 @@ import struct
 from builtins import int
 from builtins import str
 from datetime import datetime
+from socket import setdefaulttimeout
 from socket import IPPROTO_TCP
 from socket import SOCK_STREAM
 from socket import getaddrinfo
@@ -34,6 +35,8 @@ WAIT_TIME = 0xBA
 MAX_RETRYS = 10
 DATASET_SIZE = 61
 LATEST_SIZE = 56
+
+setdefaulttimeout(60)  # socket timeout in seconds
 
 
 class BLNETDirect(object):
