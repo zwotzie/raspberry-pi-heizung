@@ -168,6 +168,7 @@ class BLNETDirect(object):
             for (family, socktype, proto, _, sockaddr) in available:
                 try:
                     self._socket = socket(family, socktype, proto)
+                    self._socket.settimeout(30)
                     self._socket.connect(sockaddr)
                     break
                 except:
