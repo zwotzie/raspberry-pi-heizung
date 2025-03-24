@@ -1,16 +1,17 @@
 // styling: https://plotly.com/javascript/figure-labels/
 
-keys_analog = ['Zeit', 'RL Kessel', 'Drehzahl Ladepumpe Kessel', 'Kessel Betriebstemperatur', 'Speicherladeleitung',
+const keys_analog = ['Zeit', 'RL Kessel', 'Drehzahl Ladepumpe Kessel', 'Kessel Betriebstemperatur', 'Speicherladeleitung',
     'Außentemperatur', 'Raum RASPT', 'Speicher 1 Kopf', 'Speicher 2 Oben', 'Speicher 3 Unten', 'Speicher 4 Mitte',
     'Speicher 5 Boden', 'VL Heizung', 'RL Heizung', 'Drehzahl Heizungspumpe', 'Solarstrahlung', 'VL Solar', 'Drehzahl Ladepumpe Solar'];
 
-keys_digital = ['Heizung: Pumpe', 'Kessel: Ladepumpe', 'Kessel: Freigabe', 'Hz Mischer auf', 'Hz Mischer zu',
+const keys_digital = ['Heizung: Pumpe', 'Kessel: Ladepumpe', 'Kessel: Freigabe', 'Hz Mischer auf', 'Hz Mischer zu',
     'Kessel Mischer auf', 'Kessel Mischer zu', 'Solarkreispumpe', 'Solar: Ladepumpe', 'Solar: Freigabeventil', 'Heizung An'];
 
-keys_all = keys_analog.concat(keys_digital);
-graphs = {
+const keys_all = keys_analog.concat(keys_digital);
+
+const graphs = {
     'Pufferspeicher': ['Außentemperatur', 'Raum RASPT', 'Speicher 1 Kopf', 'Speicher 2 Oben', 'Speicher 3 Unten', 'Speicher 4 Mitte', 'Speicher 5 Boden'],
-    'Solar': ['Außentemperatur', 'Solarstrahlung', 'VL Solar', 'Drehzahl Ladepumpe Solar'],
+    'Solar': ['Außentemperatur', 'Solarstrahlung', 'VL Solar', 'Drehzahl Ladepumpe Solar', 'Solarkreispumpe', 'Solar: Ladepumpe', 'Solar: Freigabeventil'],
     'Heizung': ['VL Heizung', 'RL Heizung', 'Drehzahl Heizungspumpe'],
     'Wärmeerzeuger': ['RL Kessel', 'Drehzahl Ladepumpe Kessel', 'Kessel Betriebstemperatur', 'Speicherladeleitung']
 }
@@ -20,43 +21,46 @@ function toDate(unixtimestamp) {
     return ds
 }
 
-var date = new Date();
+let date = new Date();
 const tz_offset = date.getTimezoneOffset() * 60000;
 const today = toDate(date.getTime() / 1000).split('T')[0]
 
 // id = 4 holt alles
-var jsonUrl = "http://kleinsthof.de/uvr1611/analogChart.php?date=" + today + "&id=4&period=week";
-Plotly.d3.json(jsonUrl, function (err, data) {
-    //data = JSON.parse(data_json_str);
-    /*
-    console.log("data_json (string)" + data_json_str);
-    console.log("data: " + data);
-    console.log("data.length: " + data.length);
-    */
-
-    df = {};
-
-    for (var i = 0; i < (data[0].length); i++) {
-        df[keys_all[i]] = [];
-    }
+let jsonUrl = "http://kleinsthof.de/uvr1611/analogChart.php?date=" + today + "&id=4&period=week";
 
 
-    for (var i = 0; i < data.length; i++) {
-        row = data[i];
-        for (var k = 0; k < (row.length); k++) {
-            if (k == 0) {
-                df[keys_all[k]].push(toDate(row[k]));
-            } else {
-                df[keys_all[k]].push(row[k]);
+fetch(jsonUrl)
+  .then(response => response.json())
+  .then(data => {
+    // Process data
+        let df = {};
+
+        for (let i = 0; i < (data[0].length); i++) {
+            df[keys_all[i]] = [];
+        }
+
+        for (let i = 0; i < data.length; i++) {
+            row = data[i];
+            for (let k = 0; k < (row.length); k++) {
+                if (k === 0) {
+                    df[keys_all[k]].push(toDate(row[k]));
+                } else {
+                    df[keys_all[k]].push(row[k]);
+                }
             }
         }
-    }
-    // Analog graphs
+    processCharts(df);
+  })
+  .catch(error => console.error("Error fetching data:", error));
+
+
+function processCharts(df) {
+// Analog graphs
     for (const [key, value] of Object.entries(graphs)) {
-        plot = []
+        let plot = [];
 
         value.forEach(function (entry) {
-            if (entry != 'Zeit') {
+            if (entry !== 'Zeit') {
                 add = {
                     type: "scatter",
                     mode: "lines",
@@ -68,7 +72,7 @@ Plotly.d3.json(jsonUrl, function (err, data) {
             }
         });
 
-        var layout = {
+        let layout = {
             font: {color: '#dfdfdf'},
             title: {
                 text: key,
@@ -77,7 +81,6 @@ Plotly.d3.json(jsonUrl, function (err, data) {
             showlegend: true,
             plot_bgcolor: "#000",
             paper_bgcolor: "#000",
-            // https://plotly.com/javascript/reference/layout/yaxis/#layout-yaxis-gridcolor
             yaxis: {
                 gridcolor: "#444",
                 gridwidth: 1,
@@ -88,17 +91,19 @@ Plotly.d3.json(jsonUrl, function (err, data) {
                 gridcolor: "#333",
                 gridwidth: 1,
             },
+            hoverlabel: {namelength: -1},
         };
+
         Plotly.newPlot(key, plot, layout);
     }
 
 // digital graph
-    traces = [];
-    k = 0;
+    let traces = [];
+    let k = 0;
     keys_digital.forEach(function (entry) {
         // if (entry != 'Zeit') {
         k = k + 1;
-        trace = {
+        let trace = {
             name: entry,
             mode: 'lines',
             line: {shape: 'hv'},
@@ -114,7 +119,7 @@ Plotly.d3.json(jsonUrl, function (err, data) {
     });
 
 
-    var layout_d = {
+    let layout_d = {
         font: {color: '#dfdfdf'},
         title: {
             text: "Digitale Werte",
@@ -139,18 +144,19 @@ Plotly.d3.json(jsonUrl, function (err, data) {
             columns: 1,
             pattern: 'coupled',
             roworder: 'bottom to top',
-        }
+        },
+        hoverlabel: {namelength: -1},
     };
 
     Plotly.newPlot('digitals', traces, layout_d);
 
-    var div1 = document.getElementById("Pufferspeicher");
-    var div2 = document.getElementById("Solar");
-    var div3 = document.getElementById("Heizung");
-    var div4 = document.getElementById("Wärmeerzeuger");
-    var div5 = document.getElementById("digitals");
+    let div1 = document.getElementById("Pufferspeicher");
+    let div2 = document.getElementById("Solar");
+    let div3 = document.getElementById("Heizung");
+    let div4 = document.getElementById("Wärmeerzeuger");
+    let div5 = document.getElementById("digitals");
 
-    var divs = [div1, div2, div3, div4, div5];
+    let divs = [div1, div2, div3, div4, div5];
 
     function relayout(ed, divs) {
         if (Object.entries(ed).length === 0) {
@@ -159,8 +165,8 @@ Plotly.d3.json(jsonUrl, function (err, data) {
         divs.forEach((div, i) => {
             let x = div.layout.xaxis;
             if (ed["xaxis.autorange"] && x.autorange) return;
-            if (x.range[0] != ed["xaxis.range[0]"] || x.range[1] != ed["xaxis.range[1]"]) {
-                var update = {
+            if (x.range[0] !== ed["xaxis.range[0]"] || x.range[1] !== ed["xaxis.range[1]"]) {
+                let update = {
                     'xaxis.range[0]': ed["xaxis.range[0]"],
                     'xaxis.range[1]': ed["xaxis.range[1]"],
                     'xaxis.autorange': ed["xaxis.autorange"],
@@ -175,5 +181,4 @@ Plotly.d3.json(jsonUrl, function (err, data) {
             relayout(ed, divs);
         });
     });
-
-});
+}
