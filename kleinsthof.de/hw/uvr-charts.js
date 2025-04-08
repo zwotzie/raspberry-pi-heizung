@@ -11,19 +11,41 @@ const keys_all = keys_analog.concat(keys_digital);
 
 const graphs = {
     'Pufferspeicher': ['Außentemperatur', 'Raum RASPT', 'Speicher 1 Kopf', 'Speicher 2 Oben', 'Speicher 3 Unten', 'Speicher 4 Mitte', 'Speicher 5 Boden'],
-    'Solar': ['Außentemperatur', 'Solarstrahlung', 'VL Solar', 'Drehzahl Ladepumpe Solar', 'Solarkreispumpe', 'Solar: Ladepumpe', 'Solar: Freigabeventil'],
+    'Solar': ['Außentemperatur', 'Solarstrahlung', 'VL Solar', 'Drehzahl Ladepumpe Solar'],
     'Heizung': ['VL Heizung', 'RL Heizung', 'Drehzahl Heizungspumpe'],
     'Wärmeerzeuger': ['RL Kessel', 'Drehzahl Ladepumpe Kessel', 'Kessel Betriebstemperatur', 'Speicherladeleitung']
 }
+
+// Zuordnung der digitalen Keys zu den Gruppen
+const digital_mapping = {
+    'Pufferspeicher': [],
+    'Solar': ['Solarkreispumpe', 'Solar: Ladepumpe', 'Solar: Freigabeventil'],
+    'Heizung': ['Heizung: Pumpe', 'Hz Mischer auf', 'Hz Mischer zu'],
+    'Wärmeerzeuger': ['Heizung An', 'Kessel: Ladepumpe', 'Kessel: Freigabe',
+'Kessel Mischer auf', 'Kessel Mischer zu']
+};
+
+let date = new Date();
+const tz_offset = date.getTimezoneOffset() * 60000;
 
 function toDate(unixtimestamp) {
     ds = new Date(unixtimestamp * 1000 - tz_offset).toISOString();
     return ds
 }
 
-let date = new Date();
-const tz_offset = date.getTimezoneOffset() * 60000;
-const today = toDate(date.getTime() / 1000).split('T')[0]
+// Funktion zum Erzeugen des heutigen Datums im gewünschten Format
+function getToday() {
+    return new Date(date.getTime() - tz_offset).toISOString().split('T')[0];
+}
+
+// Funktion zum Extrahieren des Query-Parameters aus der URL
+function getQueryParam(param) {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get(param);
+}
+
+// Überprüfen, ob der 'today'-Parameter vorhanden ist
+let today = getQueryParam('datum') || getToday();
 
 // id = 4 holt alles
 let jsonUrl = "http://kleinsthof.de/uvr1611/analogChart.php?date=" + today + "&id=4&period=week";
@@ -54,115 +76,104 @@ fetch(jsonUrl)
   .catch(error => console.error("Error fetching data:", error));
 
 
+// Funktion zum Erstellen der Diagramme
 function processCharts(df) {
-// Analog graphs
-    for (const [key, value] of Object.entries(graphs)) {
-        let plot = [];
+    let divs = [];
 
+    // Für jede Gruppe ein kombiniertes Diagramm erstellen
+    for (const [key, value] of Object.entries(graphs)) {
+        let analog_traces = [];
+        let digital_traces = [];
+
+        // Analoge Spuren
         value.forEach(function (entry) {
             if (entry !== 'Zeit') {
-                add = {
+                let trace = {
                     type: "scatter",
                     mode: "lines",
                     name: entry,
                     x: df['Zeit'],
-                    y: df[entry]
-                }
-                plot.push(add);
+                    y: df[entry],
+                    xaxis: 'x',  // Gemeinsame X-Achse
+                    yaxis: 'y'   // Obere Y-Achse
+                };
+                analog_traces.push(trace);
             }
         });
 
+        // Digitale Spuren (nur die zur Gruppe passenden)
+        const digital_keys = digital_mapping[key] || [];
+        digital_keys.forEach(function (entry, index) {
+            let trace = {
+                type: "scatter",
+                mode: "lines",
+                line: { shape: 'hv' },  // Treppenform für digitale Werte
+                fill: 'tozeroy',
+                name: entry,
+                x: df['Zeit'],
+                y: df[entry],
+                xaxis: 'x',          // Gemeinsame X-Achse
+                yaxis: `y${index + 2}` // Separate Y-Achsen für digitale Werte
+            };
+            digital_traces.push(trace);
+        });
+
+        // Layout für Subplots
         let layout = {
-            font: {color: '#dfdfdf'},
+            font: { color: '#dfdfdf' },
             title: {
                 text: key,
-                font: {color: "#ccc"}
+                font: { color: "#ccc" }
             },
             showlegend: true,
             plot_bgcolor: "#000",
             paper_bgcolor: "#000",
-            yaxis: {
+            grid: {
+                rows: 2,              // 2 Reihen: analog oben, digital unten
+                columns: 1,
+                pattern: 'independent',
+                roworder: 'top to bottom'
+            },
+            xaxis: {              // Gemeinsame X-Achse
+                gridcolor: "#333",
+                gridwidth: 1
+            },
+            yaxis: {              // Analoge Y-Achse (oben)
                 gridcolor: "#444",
                 gridwidth: 1,
                 zerolinecolor: "lightgreen",
                 zerolinewidth: 1,
-            },
-            xaxis: {
-                gridcolor: "#333",
-                gridwidth: 1,
-            },
-            hoverlabel: {namelength: -1},
+                domain: [0.25, 1] // 75% der Höhe für analog (0.75 von 1)
+            }
         };
 
-        Plotly.newPlot(key, plot, layout);
+        // Dynamische Y-Achsen für digitale Werte (20% der analogen Höhe)
+        const analog_height = 0.75; // Höhe des analogen Bereichs
+        const digital_total_height = analog_height * 0.2; // 20% der analogen Höhe
+        const digital_single_height = digital_total_height / digital_keys.length; // Höhe pro digitaler Spur
+
+        digital_keys.forEach((_, index) => {
+            layout[`yaxis${index + 2}`] = {
+                showgrid: false,
+                showticklabels: false,
+                domain: [
+                    index * digital_single_height, // Startpunkt
+                    (index + 1) * digital_single_height // Endpunkt
+                ]
+            };
+        });
+
+        // Plot erstellen
+        Plotly.newPlot(key, [...analog_traces, ...digital_traces], layout);
+        divs.push(document.getElementById(key));
     }
 
-// digital graph
-    let traces = [];
-    let k = 0;
-    keys_digital.forEach(function (entry) {
-        // if (entry != 'Zeit') {
-        k = k + 1;
-        let trace = {
-            name: entry,
-            mode: 'lines',
-            line: {shape: 'hv'},
-            type: 'scatter',
-            fill: 'tozeroy',
-            x: df['Zeit'],
-            y: df[entry],
-            // xaxis: `x${k}`,
-            yaxis: `y${k}`,
-        }
-        // console.log(trace);
-        traces.push(trace);
-    });
-
-
-    let layout_d = {
-        font: {color: '#dfdfdf'},
-        title: {
-            text: "Digitale Werte",
-            font: {size: 18, color: "#ccc"}
-        },
-        plot_bgcolor: "#000",
-        paper_bgcolor: "#000",
-
-        yaxis1: {showgrid: false, showticklabels: false},
-        yaxis2: {showgrid: false, showticklabels: false},
-        yaxis3: {showgrid: false, showticklabels: false},
-        yaxis4: {showgrid: false, showticklabels: false},
-        yaxis5: {showgrid: false, showticklabels: false},
-        yaxis6: {showgrid: false, showticklabels: false},
-        yaxis7: {showgrid: false, showticklabels: false},
-        yaxis8: {showgrid: false, showticklabels: false},
-        yaxis9: {showgrid: false, showticklabels: false},
-        yaxis10: {showgrid: false, showticklabels: false},
-        yaxis11: {showgrid: false, showticklabels: false},
-        grid: {
-            rows: traces.length,
-            columns: 1,
-            pattern: 'coupled',
-            roworder: 'bottom to top',
-        },
-        hoverlabel: {namelength: -1},
-    };
-
-    Plotly.newPlot('digitals', traces, layout_d);
-
-    let div1 = document.getElementById("Pufferspeicher");
-    let div2 = document.getElementById("Solar");
-    let div3 = document.getElementById("Heizung");
-    let div4 = document.getElementById("Wärmeerzeuger");
-    let div5 = document.getElementById("digitals");
-
-    let divs = [div1, div2, div3, div4, div5];
-
+    // Synchronisation der X-Achsen
     function relayout(ed, divs) {
         if (Object.entries(ed).length === 0) {
             return;
         }
-        divs.forEach((div, i) => {
+        divs.forEach((div) => {
             let x = div.layout.xaxis;
             if (ed["xaxis.autorange"] && x.autorange) return;
             if (x.range[0] !== ed["xaxis.range[0]"] || x.range[1] !== ed["xaxis.range[1]"]) {
