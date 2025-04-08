@@ -177,7 +177,8 @@ function processCharts(df) {
                 gridwidth: 1,
                 zerolinecolor: "lightgreen",
                 zerolinewidth: 1,
-                domain: [0.25, 1] // 75% der Höhe für analog (0.75 von 1)
+                domain: [0.25, 1], // 75% der Höhe für analog (0.75 von 1)
+                side: "right",
             }
         };
 
