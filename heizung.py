@@ -175,7 +175,7 @@ class FiringControl(object):
                 if heizungs_dict['speicher_3_kopf'] < 39 \
                         and heizungs_dict['speicher_4_mitte'] < 35 \
                         and heizungs_dict['speicher_5_boden'] < 32 \
-                        and heizungs_dict['speicher_2_kopf'] < 55:
+                        and heizungs_dict['speicher_2_kopf'] < 60:
                     do_firing = "ON"
                 elif all(heizungs_dict[key] < 45 for key in
                          ['speicher_1_kopf', 'speicher_2_kopf', 'speicher_3_kopf',
