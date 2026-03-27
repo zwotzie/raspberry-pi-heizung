@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
 Created on 09.08.2018
 
@@ -7,7 +6,11 @@ This is basically a python port of of a script by berwinter
 https://github.com/berwinter/uvr1611/blob/master/lib/backend/blnet-connection.inc.php
 
 author: Niels
+
+Vendored from pyblnet 0.10.0 (MIT). See LICENSE.pyblnet in this directory.
+https://github.com/nielstron/pyblnet
 """
+
 import struct
 from datetime import datetime
 
@@ -45,9 +48,7 @@ class BLNETParser:
         # check if dataset contains time information
         # (fetched from bootloader storage)
         if len(data) == 61:
-            (_, seconds, minutes, hours, days, months, years) = struct.unpack(
-                "<55sBBBBBB", data
-            )
+            (_, seconds, minutes, hours, days, months, years) = struct.unpack("<55sBBBBBB", data)
             self.date = datetime(2000 + years, months, days, hours, minutes, seconds)
 
         # Only parse preceding data
@@ -118,7 +119,7 @@ class BLNETParser:
                 return 0
         elif mask == TYPE_RAS:
             return self._calculate_value(value, 0.1, RAS_POSITIVE_MASK)
-        elif mask in [TYPE_RADIATION, TYPE_NONE] or True:
+        elif True:
             return self._calculate_value(value)
 
     def _convert_digital(self, value, position):
