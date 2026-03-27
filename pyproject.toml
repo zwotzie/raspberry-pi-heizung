@@ -1,0 +1,111 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "raspberry-pi-heizung"
+version = "0.1.0"
+description = "Python script to control heating demand on Raspberry Pi."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "requests",
+]
+
+[project.optional-dependencies]
+raspberry_pi = [
+  "RPi.GPIO",
+  "gpio",
+]
+data = [
+  "beautifulsoup4",
+  "pandas",
+  "numpy",
+]
+test = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+]
+dev = [
+  "ruff>=0.4",
+  "mypy>=1.10",
+  "types-requests",
+  "types-psycopg2",
+]
+api = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.29",
+  "psycopg2-binary>=2.9",
+]
+
+[project.scripts]
+heizung = "heizung.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"heizung" = ["static/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q --cov=heizung --cov-report=term-missing"
+
+[tool.coverage.run]
+branch = true
+source = ["heizung"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+omit = ["src/heizung/ta/test.py"]
+
+# ── Ruff ──────────────────────────────────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle errors
+  "W",   # pycodestyle warnings
+  "F",   # pyflakes
+  "I",   # isort
+  "UP",  # pyupgrade
+  "B",   # flake8-bugbear
+  "C4",  # flake8-comprehensions
+  "SIM", # flake8-simplify
+]
+ignore = [
+  "E501",  # line too long – handled by formatter
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["heizung"]
+
+# ── Mypy ──────────────────────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.11"
+strict = false
+ignore_missing_imports = true
+disable_error_code = ["import-untyped"]
+warn_unused_ignores = true
+warn_return_any = true
+warn_redundant_casts = true
+no_implicit_optional = true
+pretty = true
+
+[[tool.mypy.overrides]]
+module = ["heizung.ta.*"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = ["requests", "requests.*"]
+ignore_missing_imports = true
+
+
+
+
+
+

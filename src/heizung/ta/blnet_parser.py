@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
 Created on 09.08.2018
 
@@ -8,6 +7,7 @@ https://github.com/berwinter/uvr1611/blob/master/lib/backend/blnet-connection.in
 
 author: Niels
 """
+
 import struct
 from datetime import datetime
 
@@ -45,9 +45,7 @@ class BLNETParser:
         # check if dataset contains time information
         # (fetched from bootloader storage)
         if len(data) == 61:
-            (_, seconds, minutes, hours, days, months, years) = struct.unpack(
-                "<55sBBBBBB", data
-            )
+            (_, seconds, minutes, hours, days, months, years) = struct.unpack("<55sBBBBBB", data)
             self.date = datetime(2000 + years, months, days, hours, minutes, seconds)
 
         # Only parse preceding data
@@ -118,7 +116,7 @@ class BLNETParser:
                 return 0
         elif mask == TYPE_RAS:
             return self._calculate_value(value, 0.1, RAS_POSITIVE_MASK)
-        elif mask in [TYPE_RADIATION, TYPE_NONE] or True:
+        elif True:
             return self._calculate_value(value)
 
     def _convert_digital(self, value, position):

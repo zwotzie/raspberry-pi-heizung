@@ -1,34 +1,62 @@
 # Raspberry Pi steuert Heizungsanforderung
-This project runs under Raspberry PI bookworms and is a simple python 3.11 script to control the heating system of my house.
+This project runs on Raspberry Pi (Bookworm) and controls the heating request for my house.
 
-* `apt install mpg321` for playing mp3 files
-* `python3 -m venv <somewhere>` and `source <somewhere>/bin/activate` to create a virtual environment
-* use this virtual environment to install the requirements: `pip install -r requirements.txt`
-* `/path/to/venv/python /path/to/heizung.py` to start the program -> supervisor/conf.d/heizung.conf
+## Setup
 
-To run the program as a "daemon", I decided to use 
-supervisor http://supervisord.org. The advantages are awesome: 
+* `python3 -m venv <somewhere>` and `source <somewhere>/bin/activate`
+* `pip install -e .[test]`
 
-* supervisord will start the program automatically - also after reboot 
-* take care of restart, if the script exited unexpected!
+### DB einrichten (auf dem Postgres-Server)
+psql -U heizung -d heizung -f migrations/001_initial.sql
 
-# soundcard
-Configure right sound card to play. For me it is card 1.
+### API-Dependencies installieren
+pip install -e ".[api]"
 
-```
-@raspberrypi:~ $ cat .asoundrc 
+### API starten (oder via Supervisor)
+export HEIZUNG_DB_URL="postgresql://heizung:secret@db-host:5432/heizung"
+uvicorn heizung.api:app --host 0.0.0.0 --port 8000
 
-defaults.pcm.card 1
-defaults.ctl.card 1
-```
 
-# GpIO
-Gpio 23 closes the Relais which starts the wooden fire heating.
+## Run locally
 
-# Acknowledgment
+* `python -m heizung`
+* optional after editable install: `heizung`
 
-Thanks to Erik Bartmann for his inspiring Book "Die elektronische Welt mit Raspberry Pi entdecken"
-```
+## Migration note (old -> new)
+
+* old: `/path/to/venv/python /path/to/heizung.py`
+* new: `python -m heizung`
+* optional CLI (after `pip install -e .`): `heizung`
+
+Configuration is loaded from `etc/heizung.conf` and logging from `etc/logging.conf`.
+
+## Run tests
+
+* `pytest`
+
+## Supervisor (daemon mode)
+
+This project is intended to run as a daemon via Supervisor.
+A matching example is in `supervisor/conf.d/heizung.conf`.
+
+The command should use the module entry point, for example:
+
+`/home/pi/raspberry-pi-heizung/venv/bin/python -m heizung`
+
+Advantages:
+
+* automatic start after reboot
+* automatic restart on unexpected exits
+
+## GPIO
+
+GPIO 23 closes the relay that starts the wood gasifier.
+
+## Acknowledgment
+
+Thanks to Erik Bartmann for his inspiring book "Die elektronische Welt mit Raspberry Pi entdecken"
+
+```text
 19-01-26 00:02:24.663  INFO     aussentemperatur          : 1.6
 19-01-26 00:02:24.665  INFO     d_heizung_mischer_auf     : 0
 19-01-26 00:02:24.667  INFO     d_heizung_mischer_zu      : 0

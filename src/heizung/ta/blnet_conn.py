@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
 Created on 09.08.2018
 
@@ -8,29 +7,24 @@ https://github.com/berwinter/uvr1611/blob/master/lib/backend/blnet-connection.in
 
 @author: Niels
 """
+
 import struct
-from builtins import int
-from builtins import str
 from datetime import datetime
-from socket import setdefaulttimeout
-from socket import IPPROTO_TCP
-from socket import SOCK_STREAM
-from socket import getaddrinfo
-from socket import socket
+from socket import IPPROTO_TCP, SOCK_STREAM, getaddrinfo, setdefaulttimeout, socket
 from time import sleep
 
 from .blnet_parser import BLNETParser
 
 # Constants for the UVR Communication
-CAN_MODE = b"\xDC"
-DL_MODE = b"\xA8"
-DL2_MODE = b"\xD1"
+CAN_MODE = b"\xdc"
+DL_MODE = b"\xa8"
+DL2_MODE = b"\xd1"
 GET_MODE = b"\x81"
-GET_HEADER = b"\xAA"
+GET_HEADER = b"\xaa"
 GET_LATEST = 0xAB
 READ_DATA = 0xAC
-END_READ = b"\xAD"
-RESET_DATA = b"\xAF"
+END_READ = b"\xad"
+RESET_DATA = b"\xaf"
 WAIT_TIME = 0xBA
 MAX_RETRYS = 10
 DATASET_SIZE = 61
@@ -39,7 +33,7 @@ LATEST_SIZE = 56
 setdefaulttimeout(60)  # socket timeout in seconds
 
 
-class BLNETDirect(object):
+class BLNETDirect:
     """
     A class for establishing a direct connection to the BLNET (rather than
     scraping the web interface)
@@ -77,7 +71,7 @@ class BLNETDirect(object):
 
             if self._checksum(data):
                 if self._mode == CAN_MODE:
-                    frame_count = struct.unpack("<{}B".format(len(data)), data)[5]
+                    frame_count = struct.unpack(f"<{len(data)}B", data)[5]
                     (
                         type,
                         version,
@@ -87,23 +81,19 @@ class BLNETDirect(object):
                         start_address,
                         end_address,
                         checksum,
-                    ) = struct.unpack("<BB3sB{}s3s3sB".format(frame_count), data)
+                    ) = struct.unpack(f"<BB3sB{frame_count}s3s3sB", data)
                     self._address_inc = 64 * frame_count
                     self._can_frames = frame_count
                     self._actual_size = 57
                     self._fetch_size = 4 + 61 * frame_count
                 elif self._mode == DL_MODE:
-                    (_, device, start_address, end_address, checksum) = struct.unpack(
-                        "<5sB3s3sB"
-                    )
+                    (_, device, start_address, end_address, checksum) = struct.unpack("<5sB3s3sB")
                     self._address_inc = 64
                     self._can_frames = 1
                     self._actual_size = 57
                     self._fetch_size = 65
                 elif self._mode == DL2_MODE:
-                    (_, device, start_address, end_address, checksum) = struct.unpack(
-                        "<5s2s3s3sB"
-                    )
+                    (_, device, start_address, end_address, checksum) = struct.unpack("<5s2s3s3sB")
                     self._address_inc = 128
                     self._can_frames = 1
                     self._actual_size = 113
@@ -118,9 +108,7 @@ class BLNETDirect(object):
                     # fix addresses
                     if end_address > start_address:
                         # calculate count
-                        self._count = (
-                            (end_address - start_address) / self._address_inc
-                        ) + 1
+                        self._count = ((end_address - start_address) / self._address_inc) + 1
                     else:
                         self._count = (
                             self._address_end + start_address - end_address
@@ -141,10 +129,9 @@ class BLNETDirect(object):
             for _ in range(0, count):
                 data.append(self._fetch_data())
             self._end_read(True)
-            return data
         finally:
             self._end_read(False)
-            return data
+        return data
 
     def _check_mode(self):
         """
@@ -165,16 +152,14 @@ class BLNETDirect(object):
         @throws ConnectionError Connection failed
         """
         if self._socket is None:
-            available = getaddrinfo(
-                self.address, self.port, 0, SOCK_STREAM, IPPROTO_TCP
-            )
-            for (family, socktype, proto, _, sockaddr) in available:
+            available = getaddrinfo(self.address, self.port, 0, SOCK_STREAM, IPPROTO_TCP)
+            for family, socktype, proto, _, sockaddr in available:
                 try:
                     self._socket = socket(family, socktype, proto)
                     self._socket.settimeout(30)
                     self._socket.connect(sockaddr)
                     break
-                except:
+                except Exception:
                     self._socket = None
             if self._socket is None:
                 raise ConnectionError("Could not connect to BLNET")
@@ -205,7 +190,7 @@ class BLNETDirect(object):
             return data
 
         self._disconnect()
-        raise ConnectionError("Error while querying command {}".format(command))
+        raise ConnectionError(f"Error while querying command {command}")
 
     def _start_read(self):
         """
@@ -220,7 +205,7 @@ class BLNETDirect(object):
         @param byte string $data Binary string to check
         @return boolean
         """
-        binary = struct.unpack("<{}B".format(len(data)), data)
+        binary = struct.unpack(f"<{len(data)}B", data)
         checksum = binary[-1]
 
         sum = 0
@@ -284,9 +269,7 @@ class BLNETDirect(object):
             frames[0] = BLNETParser(data[:DATASET_SIZE])
         elif self._mode == DL2_MODE:
             frames[0] = BLNETParser(data[:DATASET_SIZE])
-            frames[1] = BLNETParser(
-                data[3 + DATASET_SIZE : 3 + DATASET_SIZE + DATASET_SIZE]
-            )
+            frames[1] = BLNETParser(data[3 + DATASET_SIZE : 3 + DATASET_SIZE + DATASET_SIZE])
 
         start = 0
 
@@ -306,9 +289,8 @@ class BLNETDirect(object):
         if self._query(END_READ, 1) != END_READ:
             raise ConnectionError("End read command failed")
         # reset data if configured
-        if success and self.reset:
-            if self._query(RESET_DATA, 1) != RESET_DATA:
-                raise ConnectionError("Reset memory failed")
+        if success and self.reset and self._query(RESET_DATA, 1) != RESET_DATA:
+            raise ConnectionError("Reset memory failed")
         self._count = None
         self._address = None
         self._disconnect()
