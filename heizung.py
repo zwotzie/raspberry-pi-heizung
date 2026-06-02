@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
 import datetime
 import json
 import logging
@@ -23,14 +20,14 @@ raspberry = False
 if 'raspberrypi' in platform.uname():
     # global raspberry
     raspberry = True
-    import RPi.GPIO as GPIO
+    import lgpio
 
+    h = lgpio.gpiochip_open(0)
     # gpio 4 = BCM 23 = Pin 16
-    RelaisHeizung = 23
-    GPIO.setmode(GPIO.BCM)
-    GPIO.setwarnings(False)
-    GPIO.setup(RelaisHeizung, GPIO.OUT)
-    GPIO.output(RelaisHeizung, GPIO.LOW)
+    relais_heizung = 23
+    # Relais als Output
+    lgpio.gpio_claim_output(h, relais_heizung, 0)
+
 
 # Set up a specific logger with our desired output level
 _config_path = os.path.abspath(os.path.dirname(sys.argv[0]))
@@ -94,7 +91,7 @@ class FiringControl(object):
         message = "START_KESSEL: "
         if raspberry:
             message += " set RelaisHeizung-GPIO to HIGH"
-            GPIO.output(RelaisHeizung, GPIO.HIGH)
+            lgpio.gpio_write(h, relais_heizung, 1)
         else:
             message += "test only (no raspberry)"
         log_message(message)
@@ -108,7 +105,7 @@ class FiringControl(object):
         message = "STOP_KESSEL: "
         if raspberry:
             message += " set RelaisHeizung-GPIO to LOW"
-            GPIO.output(RelaisHeizung, GPIO.LOW)
+            lgpio.gpio_write(h, relais_heizung, 0)
         else:
             message += "test only (no raspberry)"
         log_message(message)
