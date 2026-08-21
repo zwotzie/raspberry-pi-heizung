@@ -17,17 +17,19 @@ import requests
 from ta.fieldlists import get_messurements
 
 raspberry = False
+
+# gpio 4 = BCM 23 = Pin 16
+relais_heizung = 23
+
 if 'raspberrypi' in platform.uname():
     # global raspberry
     raspberry = True
     import lgpio
 
     h = lgpio.gpiochip_open(0)
-    # gpio 4 = BCM 23 = Pin 16
-    relais_heizung = 23
-    # Relais als Output
+    # Relais als Output,  Off
     lgpio.gpio_claim_output(h, relais_heizung, 0)
-
+    lgpio.gpiochip_close(h)
 
 # Set up a specific logger with our desired output level
 _config_path = os.path.abspath(os.path.dirname(sys.argv[0]))
@@ -91,7 +93,11 @@ class FiringControl(object):
         message = "START_KESSEL: "
         if raspberry:
             message += " set RelaisHeizung-GPIO to HIGH"
-            lgpio.gpio_write(h, relais_heizung, 1)
+            h = lgpio.gpiochip_open(0)
+            lgpio.gpio_claim_output(h, relais_heizung, 1)
+            sleep(2)
+            lgpio.gpio_claim_output(h, relais_heizung, 0)
+            lgpio.gpiochip_close(h)
         else:
             message += "test only (no raspberry)"
         log_message(message)
@@ -105,7 +111,9 @@ class FiringControl(object):
         message = "STOP_KESSEL: "
         if raspberry:
             message += " set RelaisHeizung-GPIO to LOW"
-            lgpio.gpio_write(h, relais_heizung, 0)
+            h = lgpio.gpiochip_open(0)
+            lgpio.gpio_claim_output(h, relais_heizung, 0)
+            lgpio.gpiochip_close(h)
         else:
             message += "test only (no raspberry)"
         log_message(message)
