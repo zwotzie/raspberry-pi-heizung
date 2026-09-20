@@ -1,23 +1,6 @@
 http:
-
-  middlewares:
-    lan-only:
-      ipAllowList:
-        sourceRange:
-          - "192.168.1.0/24"
-
   routers:
-    # PUT /settings/operating-mode – LAN only
-    heizung-private:
-      rule: "Host(`heizung.domain.de`) && Method(`PUT`) && PathPrefix(`/settings`)"
-      entryPoints:
-        - web
-      middlewares:
-        - lan-only
-      service: heizung-api
-      priority: 20
-
-    # Everything else – public
+    # Heizung API – public (chart endpoint + static dashboard)
     heizung-public:
       rule: "Host(`heizung.domain.de`)"
       entryPoints:
@@ -29,5 +12,4 @@ http:
     heizung-api:
       loadBalancer:
         servers:
-          - url: "http://host.docker.internal:8000"   # uvicorn runs natively via supervisor
-
+          - url: "http://host.docker.internal:8000"   # uvicorn runs natively via systemd

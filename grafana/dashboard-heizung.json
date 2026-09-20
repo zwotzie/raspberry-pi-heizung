@@ -1,0 +1,98 @@
+{
+  "title": "Heizung UVR1611",
+  "uid": "heizung-uvr1611",
+  "tags": ["heizung"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Pufferspeicher",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "celsius" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "last_over_time(aussentemperatur[5m])", "refId": "A" },
+        { "expr": "last_over_time(raum_rasp[5m])", "refId": "B" },
+        { "expr": "last_over_time(speicher_1_kopf[5m])", "refId": "C" },
+        { "expr": "last_over_time(speicher_2_kopf[5m])", "refId": "D" },
+        { "expr": "last_over_time(speicher_3_kopf[5m])", "refId": "E" },
+        { "expr": "last_over_time(speicher_4_mitte[5m])", "refId": "F" },
+        { "expr": "last_over_time(speicher_5_boden[5m])", "refId": "G" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Solar",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": { "unit": "watt" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "VL Solar" }, "properties": [{ "id": "unit", "value": "celsius" }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "last_over_time(solar_strahlung[5m])", "legendFormat": "Solarstrahlung", "refId": "A" },
+        { "expr": "last_over_time(solar_vl[5m])", "legendFormat": "VL Solar", "refId": "B" },
+        { "expr": "last_over_time(solar_ladepumpe_drehzahl[5m])", "legendFormat": "Drehzahl Ladepumpe Solar", "refId": "C" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Heizung",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 10 },
+      "fieldConfig": { "defaults": { "unit": "celsius" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "last_over_time(heizung_vl[5m])", "legendFormat": "VL Heizung", "refId": "A" },
+        { "expr": "last_over_time(heizung_rl[5m])", "legendFormat": "RL Heizung", "refId": "B" },
+        { "expr": "last_over_time(heizung_pumpe_drehzahl[5m])", "legendFormat": "Drehzahl Heizungspumpe", "refId": "C" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Wärmeerzeuger",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 10 },
+      "fieldConfig": { "defaults": { "unit": "celsius" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "last_over_time(kessel_rl[5m])", "legendFormat": "RL Kessel", "refId": "A" },
+        { "expr": "last_over_time(kessel_ladepumpe_drehzahl[5m])", "legendFormat": "Drehzahl Ladepumpe Kessel", "refId": "B" },
+        { "expr": "last_over_time(kessel_betriebstemperatur[5m])", "legendFormat": "Kessel Betriebstemperatur", "refId": "C" },
+        { "expr": "last_over_time(speicher_ladeleitung[5m])", "legendFormat": "Speicherladeleitung", "refId": "D" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Digitale Ausgänge (0/1)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 },
+      "fieldConfig": { "defaults": { "unit": "boolean" }, "overrides": [] },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        { "expr": "last_over_time(heizung_an[5m])", "legendFormat": "Heizung An", "refId": "A" },
+        { "expr": "last_over_time(d_heizung_pumpe[5m])", "legendFormat": "Heizung Pumpe", "refId": "B" },
+        { "expr": "last_over_time(d_kessel_ladepumpe[5m])", "legendFormat": "Kessel Ladepumpe", "refId": "C" },
+        { "expr": "last_over_time(d_kessel_freigabe[5m])", "legendFormat": "Kessel Freigabe", "refId": "D" },
+        { "expr": "last_over_time(d_heizung_mischer_auf[5m])", "legendFormat": "Hz Mischer auf", "refId": "E" },
+        { "expr": "last_over_time(d_heizung_mischer_zu[5m])", "legendFormat": "Hz Mischer zu", "refId": "F" },
+        { "expr": "last_over_time(d_kessel_mischer_auf[5m])", "legendFormat": "Kessel Mischer auf", "refId": "G" },
+        { "expr": "last_over_time(d_kessel_mischer_zu[5m])", "legendFormat": "Kessel Mischer zu", "refId": "H" },
+        { "expr": "last_over_time(d_solar_kreispumpe[5m])", "legendFormat": "Solarkreispumpe", "refId": "I" },
+        { "expr": "last_over_time(d_solar_ladepumpe[5m])", "legendFormat": "Solar Ladepumpe", "refId": "J" },
+        { "expr": "last_over_time(d_solar_freigabepumpe[5m])", "legendFormat": "Solar Freigabepumpe", "refId": "K" }
+      ]
+    }
+  ]
+}

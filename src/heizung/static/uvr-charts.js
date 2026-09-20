@@ -71,7 +71,7 @@ updateLinks();
 // ── Data loading ──────────────────────────────────────────────────────────────
 
 function buildUrl() {
-    return `/analogChart.php?date=${today}&id=4&period=${period}`;
+    return `/api/chart?date=${today}&period=${period}`;
 }
 
 function parseData(data) {
@@ -101,50 +101,6 @@ datepicker.addEventListener('change', function () {
 });
 
 loadAndRender();
-
-// ── Settings modal (operating mode) ──────────────────────────────────────────
-
-const overlay    = document.getElementById('modal-overlay');
-const modeSelect = document.getElementById('mode-select');
-const modalMsg   = document.getElementById('modal-msg');
-
-function openModal() {
-    modalMsg.textContent = '';
-    modalMsg.className   = '';
-
-    fetch('/settings/operating-mode')
-        .then(r => r.json())
-        .then(d => { modeSelect.value = d.operating_mode || 'pellets'; })
-        .catch(() => { modalMsg.textContent = 'Modus konnte nicht geladen werden.'; modalMsg.className = 'err'; });
-
-    overlay.classList.add('open');
-}
-
-function closeModal() { overlay.classList.remove('open'); }
-
-document.getElementById('settings-btn').addEventListener('click', openModal);
-document.getElementById('modal-cancel').addEventListener('click', closeModal);
-overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
-
-document.getElementById('modal-save').addEventListener('click', () => {
-    const mode = modeSelect.value;
-
-    fetch(`/settings/operating-mode?mode=${mode}`, { method: 'PUT' })
-        .then(r => {
-            if (r.ok) {
-                modalMsg.textContent = `Modus auf „${mode}" gesetzt.`;
-                modalMsg.className   = 'ok';
-                setTimeout(closeModal, 1200);
-            } else if (r.status === 403) {
-                modalMsg.textContent = 'Nur im lokalen Netzwerk (192.168.1.0/24) verfügbar.';
-                modalMsg.className   = 'err';
-            } else {
-                modalMsg.textContent = `Fehler: ${r.status}`;
-                modalMsg.className   = 'err';
-            }
-        })
-        .catch(() => { modalMsg.textContent = 'Verbindungsfehler.'; modalMsg.className = 'err'; });
-});
 
 function processCharts(df) {
     const divs = [];

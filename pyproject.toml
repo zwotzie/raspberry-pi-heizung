@@ -10,6 +10,10 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "requests",
+  "PyBLNET>=0.10",
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.29",
+  "prometheus-client>=0.20",
 ]
 
 [project.optional-dependencies]
@@ -17,25 +21,18 @@ raspberry_pi = [
   "RPi.GPIO",
   "gpio",
 ]
-data = [
-  "beautifulsoup4",
-  "pandas",
-  "numpy",
-]
 test = [
   "pytest>=8.0",
   "pytest-cov>=5.0",
+  "httpx2",
 ]
 dev = [
   "ruff>=0.4",
   "mypy>=1.10",
   "types-requests",
-  "types-psycopg2",
 ]
-api = [
-  "fastapi>=0.110",
-  "uvicorn[standard]>=0.29",
-  "psycopg2-binary>=2.9",
+backfill = [
+  "pymysql>=1.1",
 ]
 
 [project.scripts]

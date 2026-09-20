@@ -1,0 +1,12 @@
+# Prometheus scrape config for the heizung daemon.
+# Merge the `scrape_configs` entry into your prometheus.yml.
+#
+# The daemon (systemd: heizung.service) exposes its sensor Gauges on :9100.
+# Adjust the host below to the Pi's address as seen from Prometheus.
+scrape_configs:
+  - job_name: heizung
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["raspberry.lan:9100"]
+        labels:
+          instance: heizung

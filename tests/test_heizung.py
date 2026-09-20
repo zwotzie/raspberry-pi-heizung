@@ -2,17 +2,14 @@ import datetime
 import unittest
 from unittest.mock import patch
 
-import requests
-
 from heizung.control import FiringControl, get_time_difference_from_now
 
 PELLETS_CONFIG = {
-    "api_url": "http://api.invalid",
     "ip": "127.0.0.1",
     "operating_mode": "pellets",
     "logger": "False",
     "relay_pin": 23,
-    "measurements_url": None,
+    "metrics_port": 9100,
 }
 FIREWOOD_CONFIG = {**PELLETS_CONFIG, "operating_mode": "firewood"}
 
@@ -33,12 +30,8 @@ class TestCheckMeasurements(unittest.TestCase):
 
     def _fake_fetch(self, control, mapping):
         def _fetch():
-            control.measurements[mapping["timestamp"]] = {
-                "field_list": {},
-                "mapping": mapping,
-                "api_data": {"foo": "bar"},
-            }
-            return {}, mapping, {"foo": "bar"}
+            control.measurements[mapping["timestamp"]] = mapping
+            return mapping
 
         return _fetch
 
@@ -60,12 +53,12 @@ class TestCheckMeasurements(unittest.TestCase):
                 "get_current_measurements_from_blnet",
                 side_effect=self._fake_fetch(control, mapping),
             ),
-            patch.object(control, "transfer_data") as transfer_data,
+            patch.object(control, "_publish_metrics") as publish,
         ):
             result = control.check_measurements()
 
         self.assertEqual(result, "ON")
-        transfer_data.assert_called_once()
+        publish.assert_called_once()
 
     def test_returns_off_for_hot_bottom_storage(self):
         control = self._control()
@@ -85,7 +78,7 @@ class TestCheckMeasurements(unittest.TestCase):
                 "get_current_measurements_from_blnet",
                 side_effect=self._fake_fetch(control, mapping),
             ),
-            patch.object(control, "transfer_data"),
+            patch.object(control, "_publish_metrics"),
         ):
             result = control.check_measurements()
 
@@ -109,7 +102,7 @@ class TestCheckMeasurements(unittest.TestCase):
                 "get_current_measurements_from_blnet",
                 side_effect=self._fake_fetch(control, mapping),
             ),
-            patch.object(control, "transfer_data"),
+            patch.object(control, "_publish_metrics"),
         ):
             result = control.check_measurements()
 
@@ -133,7 +126,7 @@ class TestCheckMeasurements(unittest.TestCase):
                 "get_current_measurements_from_blnet",
                 side_effect=self._fake_fetch(control, mapping),
             ),
-            patch.object(control, "transfer_data"),
+            patch.object(control, "_publish_metrics"),
         ):
             result = control.check_measurements()
 
@@ -148,103 +141,49 @@ class TestCheckMeasurements(unittest.TestCase):
                 side_effect=RuntimeError("BLNET down"),
             ),
             patch("heizung.control.sleep") as sleep_mock,
-            patch.object(control, "transfer_data") as transfer_data,
+            patch.object(control, "_publish_metrics") as publish,
         ):
             result = control.check_measurements()
 
         self.assertEqual(result, "OFF")
         self.assertEqual(sleep_mock.call_count, 9)
-        transfer_data.assert_not_called()
+        publish.assert_not_called()
 
 
-class TestTransferData(unittest.TestCase):
-    def test_handles_timeout_without_raising(self):
+class TestPublishMetrics(unittest.TestCase):
+    def test_publish_sets_gauges_and_operating_mode(self):
         control = FiringControl(PELLETS_CONFIG)
+        now = datetime.datetime(2026, 3, 26, 12, 0, 0)
+        mapping = {
+            "timestamp": now,
+            "aussentemperatur": 5.2,
+            "speicher_5_boden": 40.0,
+            "d_heizung_pumpe": 1,
+        }
         with (
-            patch("heizung.control.requests.post", side_effect=requests.exceptions.Timeout),
-            patch.object(control, "_log") as log_mock,
+            patch("heizung.control.metrics.set_measurement") as set_m,
+            patch("heizung.control.metrics.set_operating_mode") as set_mode,
         ):
-            control.transfer_data({"x": 1})
+            control._publish_metrics(mapping, heizung_an=1)
 
-        log_mock.assert_called_with("ERROR: Request timed out")
-
-
-class TestPushMeasurement(unittest.TestCase):
-    def test_posts_payload_with_iso_timestamp_and_heizung_an(self):
-        cfg = {**PELLETS_CONFIG, "measurements_url": "http://api.invalid"}
-        control = FiringControl(cfg)
-        import datetime as dt
-
-        now = dt.datetime(2026, 3, 26, 12, 0, 0)
-        mapping = {"timestamp": now, "aussentemperatur": 5.2}
-
-        with patch("heizung.control.requests.post") as post_mock:
-            control._push_measurement(mapping, heizung_an=1)
-
-        post_mock.assert_called_once()
-        _, kwargs = post_mock.call_args
-        assert kwargs["json"]["timestamp"] == now.isoformat()
-        assert kwargs["json"]["heizung_an"] == 1
-        assert kwargs["json"]["aussentemperatur"] == 5.2
-        assert "http://api.invalid/measurements" in post_mock.call_args[0][0]
-
-    def test_skips_post_when_measurements_url_is_none(self):
-        control = FiringControl(PELLETS_CONFIG)
-        with patch("heizung.control.requests.post") as post_mock:
-            control._push_measurement({"timestamp": None}, heizung_an=0)
-
-        post_mock.assert_not_called()
-
-    def test_logs_error_on_request_exception(self):
-        cfg = {**PELLETS_CONFIG, "measurements_url": "http://api.invalid"}
-        control = FiringControl(cfg)
-        with (
-            patch(
-                "heizung.control.requests.post",
-                side_effect=requests.exceptions.ConnectionError("down"),
-            ),
-            patch.object(control, "_log") as log_mock,
-        ):
-            control._push_measurement({"timestamp": None}, heizung_an=0)
-
-        self.assertTrue(any("could not push" in str(c) for c in log_mock.call_args_list))
+        set_mode.assert_called_once_with("pellets")
+        set_m.assert_called_once_with(mapping, heizung_an=1)
 
 
-class TestFetchOperatingMode(unittest.TestCase):
-    def test_returns_mode_from_api(self):
-        cfg = {**PELLETS_CONFIG, "measurements_url": "http://api.invalid"}
-        control = FiringControl(cfg)
-        with patch("heizung.control.requests.get") as get_mock:
-            get_mock.return_value.ok = True
-            get_mock.return_value.json.return_value = {"operating_mode": "firewood"}
-            self.assertEqual(control._fetch_operating_mode(), "firewood")
-
-    def test_falls_back_to_config_when_api_unreachable(self):
-        cfg = {**PELLETS_CONFIG, "measurements_url": "http://api.invalid"}
-        control = FiringControl(cfg)
-        with patch(
-            "heizung.control.requests.get",
-            side_effect=requests.exceptions.ConnectionError,
-        ):
-            self.assertEqual(control._fetch_operating_mode(), "pellets")
-
-    def test_falls_back_to_config_when_no_url_configured(self):
-        control = FiringControl(PELLETS_CONFIG)
-        self.assertEqual(control._fetch_operating_mode(), "pellets")
-
+class TestBufferLimit(unittest.TestCase):
     def test_limits_buffer_to_30_entries(self):
         control = FiringControl(PELLETS_CONFIG)
         base = datetime.datetime.now() - datetime.timedelta(minutes=40)
         for i in range(30):
             ts = base + datetime.timedelta(minutes=i)
-            control.measurements[ts] = {"mapping": {"timestamp": ts}}
+            control.measurements[ts] = {"timestamp": ts}
 
         newest = datetime.datetime.now()
         mapping = {"timestamp": newest}
 
         with patch(
             "heizung.control.get_messurements",
-            return_value=([], mapping, {"date": "x"}),
+            return_value=mapping,
         ):
             control.get_current_measurements_from_blnet()
 
@@ -260,6 +199,7 @@ class TestRun(unittest.TestCase):
             patch.object(control, "check_measurements", return_value="ON"),
             patch.object(control, "start_firing") as start_firing,
             patch.object(control, "stop_firing") as stop_firing,
+            patch("heizung.control.start_http_server"),
             patch("heizung.control.time", side_effect=[10.0, 11.0, 12.0]),
             patch("heizung.control.sleep", side_effect=StopLoop),
             self.assertRaises(StopLoop),
@@ -284,6 +224,7 @@ class TestRun(unittest.TestCase):
             patch.object(control, "check_measurements", side_effect=["ON", "OFF"]),
             patch.object(control, "start_firing") as start_firing,
             patch.object(control, "stop_firing") as stop_firing,
+            patch("heizung.control.start_http_server"),
             patch("heizung.control.time", side_effect=[10.0, 11.0, 12.0, 13.0, 14.0, 15.0]),
             patch("heizung.control.sleep", side_effect=stop_after_second_sleep),
             self.assertRaises(StopLoop),

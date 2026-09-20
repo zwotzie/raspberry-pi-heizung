@@ -36,15 +36,12 @@ def load_config(config_path: str | None = None) -> dict:
     blnet_host = raw["heizung"].get("blnet_host")
 
     return {
-        "url": raw["heizung"].get("url"),
-        "api_url": raw["heizung"].get("api_url"),
-        "url_internal": raw["heizung"].get("url_internal"),
         "blnet_host": blnet_host,
         "operating_mode": raw["heizung"].get("operating_mode"),
         "logger": raw["heizung"].get("logger"),
         "ip": socket.gethostbyname(blnet_host),
-        "measurements_url": raw["heizung"].get("measurements_url"),  # optional – URL of the FastAPI
-        "db_url": raw["heizung"].get("db_url"),  # used by the API server
+        "metrics_port": raw["heizung"].get("metrics_port", 9100),  # Prometheus exporter in the daemon
+        "prometheus_url": raw["heizung"].get("prometheus_url"),  # internal URL, used by the API
     }
 
 

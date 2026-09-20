@@ -1,153 +1,128 @@
 """
 FastAPI application – serves UVR1611 chart data for uvr-charts.js.
 
+Data source is Prometheus (queried via the internal ``prometheus_url``); the
+daemon exposes the live sensor values as Gauges that Prometheus scrapes.
+
+Endpoints:
+    GET /api/chart?date=&period=   chart rows, format
+                                   ``[unix_ts, *analog, *digital]``
+    GET /                          static dashboard (index.html + uvr-charts.js)
+
 Start:
     uvicorn heizung.api:app --host 0.0.0.0 --port 8000
-
-The application reads all configuration from ``etc/heizung.conf``.
-Set the environment variable ``HEIZUNG_CONFIG_PATH`` to the directory
-that contains ``etc/heizung.conf`` when the working directory differs
-from the project root.
 """
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
-from datetime import datetime
-from enum import Enum
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 
+import requests
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
 
-from heizung import db
+from heizung import metrics
 from heizung.config import load_config
 
-_cfg = load_config()
+
+def _cfg() -> dict:
+    return load_config()
 
 
-def _db_url() -> str:
-    url = _cfg.get("db_url")
+def _static_dir() -> Path:
+    return Path(_cfg().get("static_dir") or Path(__file__).parent / "static")
+
+
+def _prometheus_url() -> str:
+    url = _cfg().get("prometheus_url")
     if not url:
-        raise RuntimeError("'db_url' is not set in heizung.conf")
-    return str(url)
-
-
-STATIC_DIR = Path(_cfg.get("static_dir") or Path(__file__).parent / "static")
-
-
-class MeasurementIn(BaseModel):
-    """One measurement row as sent by the heizung daemon."""
-
-    timestamp: datetime
-    # analog sensors
-    kessel_rl: float | None = None
-    kessel_d_ladepumpe: float | None = None
-    kessel_betriebstemperatur: float | None = None
-    speicher_ladeleitung: float | None = None
-    aussentemperatur: float | None = None
-    raum_rasp: float | None = None
-    speicher_1_kopf: float | None = None
-    speicher_2_kopf: float | None = None
-    speicher_3_kopf: float | None = None
-    speicher_4_mitte: float | None = None
-    speicher_5_boden: float | None = None
-    heizung_vl: float | None = None
-    heizung_rl: float | None = None
-    heizung_d: float | None = None
-    solar_strahlung: float | None = None
-    solar_vl: float | None = None
-    solar_d_ladepumpe: float | None = None
-    # digital outputs
-    d_heizung_pumpe: int | None = None
-    d_kessel_ladepumpe: int | None = None
-    d_kessel_freigabe: int | None = None
-    d_heizung_mischer_auf: int | None = None
-    d_heizung_mischer_zu: int | None = None
-    d_kessel_mischer_auf: int | None = None
-    d_kessel_mischer_zu: int | None = None
-    d_solar_kreispumpe: int | None = None
-    d_solar_ladepumpe: int | None = None
-    d_solar_freigabepumpe: int | None = None
-    # derived
-    heizung_an: int = 0
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    db.init_db(_db_url())
-    yield
+        raise RuntimeError("'prometheus_url' is not set in heizung.conf")
+    return str(url).rstrip("/")
 
 
 app = FastAPI(
     title="UVR Heizung API",
-    description="Serves sensor data for uvr-charts.js Plotly dashboards.",
+    description="Serves sensor data for uvr-charts.js Plotly dashboards (backed by Prometheus).",
     version="1.0.0",
-    lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET"],
     allow_headers=["*"],
 )
 
-
-@app.post(
-    "/measurements",
-    status_code=201,
-    summary="Ingest one measurement from the heizung daemon",
-)
-def create_measurement(data: MeasurementIn) -> dict:
-    db.insert(_db_url(), data.model_dump())
-    return {"status": "ok"}
+# Metric names in exactly the column order expected by uvr-charts.js.
+ANALOG: list[str] = metrics.ANALOG
+DIGITAL: list[str] = metrics.DIGITAL
+ALL_NAMES: list[str] = metrics.ALL
 
 
-# ── Operating mode ────────────────────────────────────────────────────────────
-
-
-class OperatingMode(str, Enum):
-    pellets = "pellets"
-    firewood = "firewood"
+def _row_for(ts: str, by_name: dict[str, dict[str, float | None]]) -> list:
+    """Build one chart row ``[unix_ts, *analog, *digital]`` for a timestamp."""
+    values = by_name[ts]
+    row: list = [int(ts)]
+    for name in ANALOG:
+        row.append(values.get(name))
+    for name in DIGITAL:
+        row.append(values.get(name))
+    return row
 
 
 @app.get(
-    "/settings/operating-mode",
-    summary="Get current operating mode",
+    "/api/chart",
+    summary="Chart rows (Prometheus-backed), format [unix_ts, *analog, *digital]",
 )
-def get_operating_mode() -> dict:
-    mode = db.get_setting(_db_url(), "operating_mode", "pellets")
-    return {"operating_mode": mode}
-
-
-@app.put(
-    "/settings/operating-mode",
-    summary="Set operating mode  [LAN-only via Traefik IP-allowlist]",
-)
-def set_operating_mode(mode: OperatingMode) -> dict:
-    db.upsert_setting(_db_url(), "operating_mode", mode.value)
-    return {"operating_mode": mode.value}
-
-
-@app.get(
-    "/analogChart.php",
-    summary="Chart data compatible with uvr-charts.js",
-    response_description="Array of rows: [unix_ts, *analog_values, *digital_values]",
-    responses={400: {"description": "Invalid period, must be 'day' or 'week'"}},
-)
-def analog_chart(
+def chart(
     date: Annotated[str, Query(description="Date in YYYY-MM-DD format", example="2026-03-26")],
-    id: Annotated[int, Query(description="Dataset id (4 = all sensors)")] = 4,
     period: Annotated[str, Query(description="'day' or 'week'")] = "day",
 ) -> list[list]:
     if period not in ("day", "week"):
         raise HTTPException(status_code=400, detail="period must be 'day' or 'week'")
-    return db.query(_db_url(), date=date, period=period)
+
+    start = datetime.fromisoformat(date).replace(tzinfo=UTC)
+    end = start + timedelta(days=7 if period == "week" else 1)
+
+    matcher = "{__name__=~\"" + "|".join(ALL_NAMES) + "\"}"
+    params: dict[str, str | float | int] = {
+        "query": matcher,
+        "start": start.timestamp(),
+        "end": end.timestamp(),
+        "step": 60,
+    }
+    try:
+        resp = requests.get(
+            f"{_prometheus_url()}/api/v1/query_range",
+            params=params,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+    except requests.exceptions.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Prometheus unreachable: {exc}") from exc
+
+    if payload.get("status") != "success":
+        raise HTTPException(status_code=502, detail=f"Prometheus error: {payload.get('error')}")
+
+    # ts -> {metric_name: value}
+    by_name: dict[str, dict[str, float | None]] = {}
+    for series in payload["data"]["result"]:
+        name = series["metric"].get("__name__")
+        if name not in ALL_NAMES:
+            continue
+        for ts, value in series["values"]:
+            try:
+                cell: float | None = float(value)
+            except (TypeError, ValueError):
+                cell = None
+            by_name.setdefault(str(ts), {})[name] = cell
+
+    return [_row_for(ts, by_name) for ts in sorted(by_name, key=float)]
 
 
-if STATIC_DIR.is_dir():
-    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+if _static_dir().is_dir():
+    app.mount("/", StaticFiles(directory=_static_dir(), html=True), name="static")
