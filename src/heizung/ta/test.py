@@ -2,7 +2,7 @@ import socket
 
 from pyblnet import BLNETDirect
 
-hostname = "heizung.fritz.box"
+hostname = "heizung.lan"
 ip = socket.gethostbyname(hostname)
 
 bld = BLNETDirect(ip, reset=True)
