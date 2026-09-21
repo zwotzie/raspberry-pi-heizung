@@ -65,6 +65,7 @@ def main():
     p.add_argument("--job", default="heizung")
     p.add_argument("--instance", default="heizung")
     p.add_argument("--batch", type=int, default=3000, help="samples per push")
+    p.add_argument("--dryrun", type=bool, default=False, help="do not import, only print values")
     args = p.parse_args()
 
     import_url = f"{args.vm_url.rstrip('/')}/api/v1/import/prometheus"
@@ -77,7 +78,7 @@ def main():
         if not buffer:
             return
         payload = "\n".join(buffer) + "\n"
-        r = requests.post(import_url, data=payload.encode(), timeout=60)
+        r = requests.post(import_url, data=payload.encode(), timeout=300)
         if r.status_code not in (200, 204):
             print(f"ERROR {r.status_code}: {r.text}", file=sys.stderr)
             sys.exit(1)
@@ -114,13 +115,17 @@ def main():
 
                 line_out = f'{metric}{{job="{args.job}",instance="{args.instance}"}} {num:g} {ts_ms}'
                 buffer.append(line_out)
+                #if args.dryrun:
+                #    print(line_out)
 
             if len(buffer) >= args.batch:
-                flush()
+                if not args.dryrun:
+                    flush()
                 if rows % 50000 == 0:
                     print(f"... {rows} rows, {samples} samples", file=sys.stderr)
 
-    flush()
+    if not args.dryrun:
+        flush()
     print(f"Fertig: {rows} rows → {samples} samples", file=sys.stderr)
 
 
