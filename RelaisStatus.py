@@ -4,23 +4,21 @@
 import platform
 
 
-raspberry = False
-if 'raspberrypi' in platform.uname():
-    # global raspberry
-    raspberry = True
-    import RPi.GPIO as GPIO
+# gpio 4 = BCM 23 = Pin 16
+RelaisHeizung = 23
 
-    # gpio 4 = BCM 23 = Pin 16
-    RelaisHeizung = 23
-    GPIO.setmode(GPIO.BCM)
-    GPIO.setwarnings(False)
+if "raspberrypi" in platform.uname():
+    import lgpio
 
+    h = lgpio.gpiochip_open(0)
+    lgpio.gpio_claim_input(h, RelaisHeizung)
+    state = lgpio.gpio_read(h, RelaisHeizung)
+    lgpio.gpio_free(h, RelaisHeizung)
+    lgpio.gpiochip_close(h)
 
-GPIO.setup(RelaisHeizung, GPIO.IN)
-state = GPIO.input(RelaisHeizung)
-
-
-if state == 0:
-    print("Heizungsrelais ist aus")
-elif state == 1:
-    print("Heizungsrelais ist an")
+    if state == 0:
+        print("Heizungsrelais ist aus")
+    else:
+        print("Heizungsrelais ist an")
+else:
+    print("not running on a raspberry pi")

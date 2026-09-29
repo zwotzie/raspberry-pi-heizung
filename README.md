@@ -1,56 +1,133 @@
 # Raspberry Pi steuert Heizungsanforderung
-This project runs on Raspberry Pi (Bookworm) and controls the heating request for my house.
+This project runs on Raspberry Pi (Bookworm/Trixie) and controls the heating request for my house.
+
+## Architektur
+
+* **Daemon** (`python -m heizung`): liest die UVR1611 über das BL-NET aus, steuert das
+  Relais (Holzvergaser / Pellets) und exportiert alle Sensorwerte als Prometheus-Gauges
+  (Port `metrics_port`, Standard 9100).
+* **Prometheus** (oder VictoriaMetrics) scrapt den Daemon, Beispiel: `prometheus/heizung.yml`.
+* **API** (`uvicorn heizung.api:app`): liefert `GET /api/chart?date=&period=` aus Prometheus
+  und das statische Dashboard unter `/`. Grafana-Dashboard: `grafana/dashboard-heizung.json`,
+  Reverse-Proxy-Beispiel: `traefik/heizung.yml`.
 
 ## Setup
 
-* `python3 -m venv <somewhere>` and `source <somewhere>/bin/activate`
+Mit [uv](https://docs.astral.sh/uv/) (empfohlen, `uv.lock` liegt im Repo):
+
+```bash
+uv sync --extra test          # legt .venv an und installiert exakt die Versionen aus uv.lock
+uv sync --extra test --extra dev --extra backfill   # optional weitere Extras
+uv run python -m heizung      # Befehle ohne manuelles Aktivieren des venv ausführen
+uv run pytest
+```
+
+Auf dem Raspberry Pi zusätzlich `--extra raspberry_pi` (siehe Abschnitt GPIO).
+Extras: `test`, `dev` (ruff, mypy), `backfill` (pymysql), `raspberry_pi` (lgpio).
+
+Alternativ mit pip:
+
+* `python3 -m venv venv` und `source venv/bin/activate`
 * `pip install -e .[test]`
 
-### DB einrichten (auf dem Postgres-Server)
-psql -U heizung -d heizung -f migrations/001_initial.sql
+Konfiguration:
 
-### API-Dependencies installieren
-pip install -e ".[api]"
+* `etc/sample_heizung.conf` nach `etc/heizung.conf` kopieren und anpassen
+  (`blnet_host`, `operating_mode`, `metrics_port`, `prometheus_url`).
+  Logging wird aus `etc/logging.conf` geladen.
+* Optional: `HEIZUNG_CONFIG_PATH` setzt das Verzeichnis, das `etc/` enthält
+  (Standard: Verzeichnis des gestarteten Skripts).
 
-### API starten (oder via Supervisor)
-export HEIZUNG_DB_URL="postgresql://heizung:secret@db-host:5432/heizung"
-uvicorn heizung.api:app --host 0.0.0.0 --port 8000
+## Lokal starten
 
+* Daemon: `uv run python -m heizung` bzw. `python -m heizung` (oder `heizung`)
+* API: `uv run uvicorn heizung.api:app --host 0.0.0.0 --port 8000`
 
-## Run locally
+## Tests
 
-* `python -m heizung`
-* optional after editable install: `heizung`
+* `uv run pytest` bzw. `pytest`
+* Lint/Typen (Extra `dev`): `uv run ruff check .` und `uv run mypy src`
+* CI: `.github/workflows/python-tests.yml` (Python 3.11/3.13 und Debian Bookworm)
 
-## Migration note (old -> new)
+## Prometheus
 
-* old: `/path/to/venv/python /path/to/heizung.py`
-* new: `python -m heizung`
-* optional CLI (after `pip install -e .`): `heizung`
+Der Daemon stellt auf `metrics_port` (Standard 9100) pro Sensor ein Gauge bereit
+(Namen wie `aussentemperatur`, `speicher_1_kopf`, `d_kessel_ladepumpe`, …; Definition in
+`src/heizung/metrics.py`). Prometheus (oder VictoriaMetrics/vmagent) scrapt das:
 
-Configuration is loaded from `etc/heizung.conf` and logging from `etc/logging.conf`.
+* `prometheus/heizung.yml` als `scrape_configs`-Eintrag in die eigene `prometheus.yml` übernehmen
+  (Job `heizung`, Intervall 30s, Target `<pi-host>:9100`).
+* `prometheus_url` in `etc/heizung.conf` muss auf diese Instanz zeigen; die API fragt darüber
+  die Chart-Daten ab.
 
-## Run tests
+## Grafana
 
-* `pytest`
+`grafana/dashboard-heizung.json` (UID `heizung-uvr1611`) in Grafana importieren
+(Dashboards → New → Import). Es nutzt eine Prometheus-kompatible Datenquelle
+(Prometheus oder VictoriaMetrics), die über die Variable `datasource` gewählt wird, und
+filtert auf `job="heizung"`. Panels: Pufferspeicher, Solar, Heizung, Wärmeerzeuger
+(jeweils analog und digital).
 
-## Supervisor (daemon mode)
+## Traefik / Dashboard
 
-This project is intended to run as a daemon via Supervisor.
-A matching example is in `supervisor/conf.d/heizung.conf`.
+Die API liefert das eingebaute Dashboard (`/`, `src/heizung/static/`) und `/api/chart`.
+`traefik/heizung.yml` ist ein Beispiel für die dynamische Traefik-Konfiguration:
+Host `heizung.domain.de` → uvicorn auf `host.docker.internal:8000` (systemd-Dienst
+`heizung-api`). Hostname, Entrypoint und Ziel-URL anpassen; TLS/Auth nach Bedarf ergänzen,
+da die API keine eigene Authentifizierung hat.
 
-The command should use the module entry point, for example:
+## Betrieb mit systemd
 
-`/home/pi/raspberry-pi-heizung/venv/bin/python -m heizung`
+Beide Dienste laufen als systemd-Units (Beispiele in `systemd/`):
 
-Advantages:
+* `systemd/heizung.service` – Daemon (`python -m heizung`)
+* `systemd/heizung-api.service` – API (uvicorn)
 
-* automatic start after reboot
-* automatic restart on unexpected exits
+```bash
+sudo cp systemd/*.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now heizung heizung-api
+```
+
+Pfade (`/home/pi/raspberry-pi-heizung`) und User in den Units bei Bedarf anpassen.
+Vorteile: automatischer Start nach Reboot und Neustart bei unerwartetem Beenden.
+Änderungen an `operating_mode` werden mit `sudo systemctl restart heizung` übernommen.
+
+## Historische Daten importieren (optional)
+
+Alte Daten aus einer MySQL-Datenbank lassen sich nach VictoriaMetrics übernehmen
+(`uv sync --extra backfill` bzw. `pip install -e .[backfill]`):
+
+* `tools/mysql-export.sh` – Export als gzip-CSV (auf dem DB-Host)
+* `tools/backfill_to_victoriametrics.py <datei.csv.gz> [--vm-url ...]` – Import;
+  `tools/backfill-csv.sh` ruft ihn für mehrere Jahre auf.
 
 ## GPIO
 
 GPIO 23 closes the relay that starts the wood gasifier.
+
+On the Raspberry Pi (Debian Trixie / Python 3.13) the relay is driven via the
+[`lgpio`](https://pypi.org/project/lgpio/) library:
+
+```bash
+sudo apt install python3-lgpio   # recommended on Trixie
+# or, inside the venv:
+pip install '.[raspberry_pi]'
+```
+
+### Developing off-device (macOS / Windows)
+
+`lgpio` only builds on Linux (it needs `linux/gpio.h`), so it cannot be
+installed on macOS/Windows. For local development a no-op stub lives in
+`dev_stubs/lgpio.py`. Make `import lgpio` resolve to it by putting the folder
+on the interpreter path, e.g. via a `.pth` file in your venv:
+
+```bash
+echo "$(pwd)/dev_stubs" > "$(python -c 'import site; print(site.getsitepackages()[0])')/lgpio-dev-stub.pth"
+```
+
+The stub logs every GPIO call instead of touching real hardware.
+
 
 ## Acknowledgment
 

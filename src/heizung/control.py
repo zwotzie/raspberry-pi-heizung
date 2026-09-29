@@ -22,7 +22,7 @@ class FiringControl:
     def __init__(self, config: dict, gpio=None):
         """
         :param config: dict from config.load_config()
-        :param gpio:   RPi.GPIO module when running on a Raspberry Pi, else None
+        :param gpio:   lgpio adapter (output/HIGH/LOW) when running on a Raspberry Pi, else None
         """
         self.ip = config["ip"]
         self.operating_mode: str = str(config.get("operating_mode", "pellets"))

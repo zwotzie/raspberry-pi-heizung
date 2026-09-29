@@ -45,18 +45,44 @@ def load_config(config_path: str | None = None) -> dict:
     }
 
 
-def setup_gpio(relay_pin: int = 23):
+class _LgpioAdapter:
+    """Adapter that mimics the small subset of the old RPi.GPIO API
+    (``.output()``, ``.HIGH``, ``.LOW``, ``.cleanup()``) on top of lgpio.
+
+    This keeps control.py unchanged while moving to lgpio, the library
+    that works on Debian Trixie / Python 3.13.
+    """
+
+    HIGH = 1
+    LOW = 0
+
+    def __init__(self, relay_pin: int, chip: int = 0):
+        import lgpio
+
+        self._lgpio = lgpio
+        self._relay_pin = relay_pin
+        self._handle = lgpio.gpiochip_open(chip)
+        # claim as output, initial level LOW (0)
+        lgpio.gpio_claim_output(self._handle, relay_pin, self.LOW)
+
+    def output(self, pin: int, level: int) -> None:
+        self._lgpio.gpio_write(self._handle, pin, level)
+
+    def cleanup(self) -> None:
+        try:
+            self._lgpio.gpio_free(self._handle, self._relay_pin)
+        finally:
+            self._lgpio.gpiochip_close(self._handle)
+
+
+def setup_gpio(relay_pin: int = 23, chip: int = 0):
     """
     Initialize GPIO relay if running on a Raspberry Pi.
 
-    :returns: (is_raspberry: bool, gpio_module or None)
+    Uses ``lgpio`` (works on Debian Trixie / Python 3.13).
+
+    :returns: (is_raspberry: bool, gpio object or None)
     """
     if "raspberrypi" in platform.uname():
-        import RPi.GPIO as GPIO
-
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setwarnings(False)
-        GPIO.setup(relay_pin, GPIO.OUT)
-        GPIO.output(relay_pin, GPIO.LOW)
-        return True, GPIO
+        return True, _LgpioAdapter(relay_pin, chip=chip)
     return False, None

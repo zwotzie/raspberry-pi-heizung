@@ -1,24 +1,26 @@
 #!/usr/bin/env python
 
-from time import gmtime, strftime, time, sleep
-import RPi.GPIO as GPIO
+from time import sleep
+
+import lgpio
 
 # gpio 4 = BCM 23 = Pin 16
 RelaisHeizung = 23
-GPIO.setmode(GPIO.BCM)
-GPIO.setwarnings(False)
-GPIO.setup(RelaisHeizung,  GPIO.OUT)
-GPIO.output(RelaisHeizung,  GPIO.LOW)
 
-# start fire
-GPIO.output(RelaisHeizung, GPIO.HIGH)
+h = lgpio.gpiochip_open(0)
+# Relais als Output, initial LOW
+lgpio.gpio_claim_output(h, RelaisHeizung, 0)
 
+try:
+    # start fire
+    lgpio.gpio_write(h, RelaisHeizung, 1)
 
-t = 3600 * 1.5
-sleep(t)
+    t = int(3600 * 1.5)
+    sleep(t)
 
-# stop fire
-GPIO.output(RelaisHeizung, GPIO.LOW)
-
-# cleanup
-GPIO.cleanup()
+    # stop fire
+    lgpio.gpio_write(h, RelaisHeizung, 0)
+finally:
+    # cleanup
+    lgpio.gpio_free(h, RelaisHeizung)
+    lgpio.gpiochip_close(h)

@@ -18,8 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 raspberry_pi = [
-  "RPi.GPIO",
-  "gpio",
+  "lgpio",
 ]
 test = [
   "pytest>=8.0",
