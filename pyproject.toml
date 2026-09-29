@@ -37,6 +37,10 @@ backfill = [
 [project.scripts]
 heizung = "heizung.__main__:main"
 
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+default = true
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
