@@ -49,6 +49,25 @@ Alternativ mit pip:
 * `python3 -m venv venv` und `source venv/bin/activate`
 * `pip install -e .[test]`
 
+### Installation auf Pi Zero / Pi 1 (armv6l, piwheels)
+
+Für `armv6l` (`uname -m`) gibt es auf PyPI kaum Wheels; Kompilieren (z. B. `pydantic-core`,
+`uvloop`) scheitert an RAM. Stattdessen Wheels von [piwheels](https://www.piwheels.org) nutzen
+und `uv sync` vermeiden (`uv.lock` kennt nur PyPI-URLs):
+
+```bash
+sudo apt install python3-lgpio
+python3 -m venv --system-site-packages venv
+venv/bin/pip install --only-binary :all: --extra-index-url https://www.piwheels.org/simple \
+  requests fastapi uvicorn prometheus-client
+venv/bin/pip install htmldom PyBLNET      # htmldom ist reines Python (nur sdist), wird lokal gebaut
+venv/bin/pip install --no-deps -e .
+```
+
+`--only-binary :all:` bricht ab, statt zu kompilieren. Fehlt für ein Paket ein Wheel, eine
+ältere Version fixieren, die bei piwheels vorhanden ist (`https://www.piwheels.org/project/<paket>/`).
+`lgpio` kommt aus apt (`--system-site-packages`), nicht aus dem Extra `raspberry_pi`.
+
 ### Troubleshooting: `uv sync` bricht ab / Pi rebootet
 
 Spontane Reboots während `uv sync` deuten meist auf Unterspannung (Netzteil) oder
