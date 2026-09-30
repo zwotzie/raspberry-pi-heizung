@@ -4,9 +4,12 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
+WatchdogSec=300
 User=pi
 WorkingDirectory=/home/pi/raspberry-pi-heizung
+LogsDirectory=heizung
 Environment=HEIZUNG_CONFIG_PATH=/home/pi/raspberry-pi-heizung
 ExecStart=/home/pi/raspberry-pi-heizung/venv/bin/python -m heizung
 Restart=on-failure

@@ -12,7 +12,7 @@ dependencies = [
   "requests",
   "PyBLNET>=0.10",
   "fastapi>=0.110",
-  "uvicorn[standard]>=0.29",
+  "uvicorn>=0.29",
   "prometheus-client>=0.20",
 ]
 

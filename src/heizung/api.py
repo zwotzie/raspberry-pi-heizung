@@ -15,7 +15,8 @@ Start:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+import logging
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 
@@ -27,16 +28,25 @@ from fastapi.staticfiles import StaticFiles
 from heizung import metrics
 from heizung.config import load_config
 
+logger = logging.getLogger(__name__)
+
 
 def _cfg() -> dict:
+    """Return the current configuration (re-read from heizung.conf)."""
     return load_config()
 
 
 def _static_dir() -> Path:
+    """Directory of the static dashboard; ``static_dir`` from config or the packaged default."""
     return Path(_cfg().get("static_dir") or Path(__file__).parent / "static")
 
 
 def _prometheus_url() -> str:
+    """Return the configured Prometheus base URL without trailing slash.
+
+    Raises:
+        RuntimeError: If ``prometheus_url`` is not configured.
+    """
     url = _cfg().get("prometheus_url")
     if not url:
         raise RuntimeError("'prometheus_url' is not set in heizung.conf")
@@ -63,7 +73,15 @@ ALL_NAMES: list[str] = metrics.ALL
 
 
 def _row_for(ts: str, by_name: dict[str, dict[str, float | None]]) -> list:
-    """Build one chart row ``[unix_ts, *analog, *digital]`` for a timestamp."""
+    """Build one chart row ``[unix_ts, *analog, *digital]`` for a timestamp.
+
+    Args:
+        ts: Unix timestamp as string (key of ``by_name``).
+        by_name: Mapping of timestamp to ``{metric_name: value}``.
+
+    Returns:
+        Row with ``None`` for missing values.
+    """
     values = by_name[ts]
     row: list = [int(ts)]
     for name in ANALOG:
@@ -81,13 +99,29 @@ def chart(
     date: Annotated[str, Query(description="Date in YYYY-MM-DD format", example="2026-03-26")],
     period: Annotated[str, Query(description="'day' or 'week'")] = "day",
 ) -> list[list]:
+    """Return minute-resolution rows for one day or one week starting at ``date``.
+
+    Args:
+        date: Start date in ``YYYY-MM-DD`` format (local midnight).
+        period: ``"day"`` or ``"week"``.
+
+    Returns:
+        Rows ``[unix_ts, *analog, *digital]``; missing values are ``None``.
+
+    Raises:
+        HTTPException: 400 for an invalid period, 502 if Prometheus is
+            unreachable or returns an error.
+    """
     if period not in ("day", "week"):
         raise HTTPException(status_code=400, detail="period must be 'day' or 'week'")
 
-    start = datetime.fromisoformat(date).replace(tzinfo=UTC)
+    try:
+        start = datetime.fromisoformat(date).astimezone()  # midnight in local time
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
     end = start + timedelta(days=7 if period == "week" else 1)
 
-    matcher = "{__name__=~\"" + "|".join(ALL_NAMES) + "\"}"
+    matcher = "{job=\"heizung\",__name__=~\"" + "|".join(ALL_NAMES) + "\"}"
     params: dict[str, str | float | int] = {
         "query": matcher,
         "start": start.timestamp(),
@@ -95,14 +129,20 @@ def chart(
         "step": 60,
     }
     try:
+        base_url = _prometheus_url()
+    except (RuntimeError, OSError, KeyError) as exc:
+        logger.exception("configuration error")
+        raise HTTPException(status_code=503, detail=f"Configuration error: {exc!r}") from exc
+    try:
         resp = requests.get(
-            f"{_prometheus_url()}/api/v1/query_range",
+            f"{base_url}/api/v1/query_range",
             params=params,
             timeout=15,
         )
         resp.raise_for_status()
         payload = resp.json()
-    except requests.exceptions.RequestException as exc:
+    except (requests.exceptions.RequestException, ValueError) as exc:
+        logger.exception("Prometheus request failed")
         raise HTTPException(status_code=502, detail=f"Prometheus unreachable: {exc}") from exc
 
     if payload.get("status") != "success":

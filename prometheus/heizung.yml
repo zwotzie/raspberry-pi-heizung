@@ -10,3 +10,14 @@ scrape_configs:
       - targets: ["raspberry.lan:9100"]
         labels:
           instance: heizung
+
+# Example alert rules (put into a rule_files entry):
+#
+# groups:
+#   - name: heizung
+#     rules:
+#       - alert: HeizungDataStale
+#         expr: heizung_up == 0 or absent(heizung_up{job="heizung"})
+#         for: 5m
+#       - alert: HeizungPollFailing
+#         expr: increase(heizung_poll_errors_total[10m]) > 5

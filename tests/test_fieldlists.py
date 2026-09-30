@@ -10,7 +10,7 @@ class TestFieldlists(unittest.TestCase):
         now = datetime.datetime(2026, 3, 26, 12, 0, 0)
         latest = {
             0: {
-                "analog": {1: 12.3, 2: 70.1, 99: 123},
+                "analog": {1: 12.3, 2: 70.1, 3: 60, 4: 50, 16: 40, 5: 30, 15: 0, 99: 123},
                 "digital": {3: 1, 6: 0, 99: 1},
                 "speed": {3: 44, 4: None},
                 "power": {1: None, 2: 2200},
@@ -26,7 +26,7 @@ class TestFieldlists(unittest.TestCase):
 
             mapping = fieldlists.get_messurements("127.0.0.1", reset=True)
 
-        bld_cls.assert_called_once_with("127.0.0.1", reset=True)
+        bld_cls.assert_called_once_with("127.0.0.1", reset=True, timeout=20)
         self.assertEqual(mapping["timestamp"], now)
         self.assertEqual(mapping["aussentemperatur"], 12.3)
         self.assertEqual(mapping["speicher_1_kopf"], 70.1)
@@ -39,7 +39,7 @@ class TestFieldlists(unittest.TestCase):
         now = datetime.datetime(2026, 3, 26, 12, 5, 0)
         latest = {
             0: {
-                "analog": {1: 8.8},
+                "analog": {1: 8.8, 2: 1, 3: 2, 4: 3, 16: 4, 5: 5, 15: 6},
                 "digital": {},
                 "speed": {},
                 "power": {},
@@ -57,6 +57,20 @@ class TestFieldlists(unittest.TestCase):
 
         self.assertEqual(mapping["aussentemperatur"], 8.8)
         self.assertEqual(mapping["timestamp"], now)
+
+    def test_incomplete_data_raises(self):
+        latest = {0: {"analog": {1: 8.8}, "digital": {}, "speed": {}}, "date": datetime.datetime.now()}
+        with patch("heizung.ta.fieldlists.BLNETDirect") as bld_cls:
+            bld_cls.return_value.get_latest.return_value = latest
+            with self.assertRaises(ConnectionError):
+                fieldlists.get_messurements("192.0.2.1")
+
+    def test_timeout_frame_raises(self):
+        latest = {0: "timeout", "date": datetime.datetime.now()}
+        with patch("heizung.ta.fieldlists.BLNETDirect") as bld_cls:
+            bld_cls.return_value.get_latest.return_value = latest
+            with self.assertRaises(ConnectionError):
+                fieldlists.get_messurements("192.0.2.1")
 
 
 if __name__ == "__main__":

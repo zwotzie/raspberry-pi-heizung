@@ -1,43 +1,65 @@
+"""Control logic: polls the BL-Net, decides on firing and switches the boiler relay."""
+
 import datetime
 import json
 import logging
 import sys
-from time import sleep, time
+import threading
+from time import monotonic, sleep, time
 
 from prometheus_client import start_http_server
 
-from heizung import metrics
+from heizung import metrics, sdnotify
 from heizung.ta.fieldlists import get_messurements
 
 logger = logging.getLogger("heizung")
 
+POLL_INTERVAL = 60  # seconds between BL-Net polls / control decisions
+POLL_RETRIES = 3
+POLL_RETRY_DELAY = 5
+WATCHDOG_MAX_SILENCE = 240  # poller must have finished an attempt within this time
+
 
 def get_time_difference_from_now(timestamp) -> int:
-    """Return minutes elapsed since timestamp."""
+    """Return minutes elapsed since timestamp.
+
+    Args:
+        timestamp: Naive local ``datetime`` in the past.
+
+    Returns:
+        Whole minutes (rounded down).
+    """
     time_diff = datetime.datetime.now() - timestamp
     return int(time_diff.total_seconds() / 60)
 
 
 class FiringControl:
+    """Polls sensor data in a background thread and switches the boiler relay.
+
+    Two operating modes: ``pellets`` (switch on/off on decision changes) and
+    ``firewood`` (relay follows the decision on every cycle).
+    """
+
     def __init__(self, config: dict, gpio=None):
-        """
-        :param config: dict from config.load_config()
-        :param gpio:   lgpio adapter (output/HIGH/LOW) when running on a Raspberry Pi, else None
+        """Initialize the controller.
+
+        Args:
+            config: Configuration dict from ``config.load_config()``.
+            gpio: lgpio adapter (output/HIGH/LOW) when running on a Raspberry Pi,
+                else None.
         """
         self.ip = config["ip"]
         self.operating_mode: str = str(config.get("operating_mode", "pellets"))
-        self._log2log = config.get("logger", "False")
         self._gpio = gpio
         self._relay_pin = config.get("relay_pin", 23)
         self._metrics_port: int = int(config.get("metrics_port", 9100))
         self.firing_start: float | None = None
         self.measurements: dict[datetime.datetime, dict] = {}
-
-    def _log(self, message):
-        if self._log2log == "True":
-            logger.info(message)
-        else:
-            print(message)
+        self._lock = threading.Lock()
+        self._last_attempt: float = monotonic()
+        self._polled = threading.Event()
+        self._stop = threading.Event()
+        metrics.configure(float(config.get("metrics_stale_after", metrics.DEFAULT_STALE_AFTER)))
 
     def start_firing(self):
         """Close relay to start/keep the boiler running."""
@@ -47,7 +69,7 @@ class FiringControl:
             self._gpio.output(self._relay_pin, self._gpio.HIGH)
         else:
             message += "test only (no raspberry)"
-        self._log(message)
+        logger.info(message)
 
     def stop_firing(self):
         """Open relay to stop the boiler."""
@@ -57,29 +79,91 @@ class FiringControl:
             self._gpio.output(self._relay_pin, self._gpio.LOW)
         else:
             message += "test only (no raspberry)"
-        self._log(message)
+        logger.info(message)
 
-    def _publish_metrics(self, mapping: dict, heizung_an: int) -> None:
-        """Expose the latest measurement on the Prometheus endpoint."""
+    def _heizung_an(self) -> int:
+        """1 while firing is active, else 0 (exported as metric)."""
+        return 1 if self.firing_start else 0
+
+    def _publish_metrics(self, mapping: dict, duration: float | None = None) -> None:
+        """Expose the latest measurement on the Prometheus endpoint.
+
+        Args:
+            mapping: Measurement dict as returned by ``get_messurements``.
+            duration: Duration of the poll in seconds.
+        """
         metrics.set_operating_mode(self.operating_mode)
-        metrics.set_measurement(mapping, heizung_an=heizung_an)
+        metrics.set_measurement(mapping, heizung_an=self._heizung_an(), duration=duration)
 
     def get_current_measurements_from_blnet(self) -> dict:
-        """Fetch the latest dataset from the BL-Net and add it to the internal buffer."""
-        mapping = get_messurements(ip=self.ip, reset=False)
-        self.measurements[mapping["timestamp"]] = mapping
-        self._log(f"dh={mapping}")
+        """Fetch the latest dataset from the BL-Net and add it to the internal buffer.
 
-        if len(self.measurements) > 30:
-            oldest = min(self.measurements.keys())
-            del self.measurements[oldest]
+        Returns:
+            The measurement dict.
+
+        Raises:
+            Exception: If the BL-Net cannot be reached or returns no data.
+        """
+        mapping = get_messurements(ip=self.ip, reset=False)
+        with self._lock:
+            self.measurements[mapping["timestamp"]] = mapping
+            while len(self.measurements) > 30:
+                del self.measurements[min(self.measurements)]
+        logger.info(f"dh={mapping}")
         return mapping
+
+    def poll_once(self) -> bool:
+        """One poll cycle with short retries; always updates metrics. Never raises.
+
+        Returns:
+            True if a measurement was fetched, False after all retries failed.
+        """
+        start = monotonic()
+        try:
+            for attempt in range(POLL_RETRIES):
+                try:
+                    mapping = self.get_current_measurements_from_blnet()
+                except Exception as e:
+                    logger.warning(f"#{attempt} Error while fetching data from BLNET: {e}")
+                    metrics.record_poll_failure(monotonic() - start)
+                    if attempt < POLL_RETRIES - 1 and not self._stop.wait(POLL_RETRY_DELAY):
+                        continue
+                    return False
+                self._publish_metrics(mapping, duration=monotonic() - start)
+                return True
+            return False
+        finally:
+            self._last_attempt = monotonic()
+            self._polled.set()
+
+    def _poll_loop(self) -> None:
+        """Poll the BL-Net on a fixed monotonic cadence, independent of the control logic."""
+        next_run = monotonic()
+        while not self._stop.is_set():
+            try:
+                self.poll_once()
+            except Exception:
+                logger.exception("unexpected error in poller")
+            next_run += POLL_INTERVAL
+            delay = next_run - monotonic()
+            if delay < 0:  # overran: do not burst, restart the cadence
+                next_run = monotonic()
+                delay = 0
+            self._stop.wait(delay)
 
     # ── helpers extracted to reduce cognitive complexity ──────────────────────
 
     @staticmethod
     def _evaluate_firing(m: dict) -> str:
-        """Return 'ON', 'OFF' or '-' for a single measurement dict."""
+        """Return 'ON', 'OFF' or '-' for a single measurement dict.
+
+        Args:
+            m: Measurement dict with the storage temperature fields.
+
+        Returns:
+            "OFF" if the storage bottom is hot, "ON" if the storage is low or
+            all cold, otherwise "-".
+        """
         if m["speicher_5_boden"] > 72:
             return "OFF"
         low_storage = (
@@ -102,14 +186,20 @@ class FiringControl:
 
     def _finalize_check(
         self,
-        mapping: dict,
         start_list: list,
         solar_list: list,
         dt_now: str,
     ) -> str:
-        """Evaluate collected lists, publish metrics and return the firing decision."""
-        heizung_an = 1 if self.firing_start else 0
+        """Evaluate collected lists and return the firing decision.
 
+        Args:
+            start_list: Per-measurement results of ``_evaluate_firing``.
+            solar_list: Solar radiation values of the same period.
+            dt_now: Current time as formatted string (for logging).
+
+        Returns:
+            "ON", "OFF" or "-". "OFF" wins on missing data or high solar radiation.
+        """
         if "OFF" in start_list or not start_list:
             result = "OFF"
         elif "ON" in start_list:
@@ -117,14 +207,12 @@ class FiringControl:
         else:
             result = "-"
 
-        self._publish_metrics(mapping, heizung_an=heizung_an)
-
         mean_solar = sum(solar_list) // len(solar_list) if solar_list else 0
         if mean_solar > 400:
             result = "OFF"
 
-        self._log(json.dumps({"t": dt_now, "mean solar": mean_solar, "solar_list_30m": solar_list}))
-        self._log(
+        logger.info(json.dumps({"t": dt_now, "mean solar": mean_solar, "solar_list_30m": solar_list}))
+        logger.info(
             json.dumps(
                 {
                     "t": dt_now,
@@ -137,6 +225,11 @@ class FiringControl:
         return result
 
     def _handle_firewood(self, result: str) -> None:
+        """Firewood mode: relay simply follows the decision (ON, otherwise off).
+
+        Args:
+            result: Decision from ``check_measurements``.
+        """
         if result == "ON":
             self.start_firing()
             self.firing_start = time()
@@ -145,6 +238,11 @@ class FiringControl:
             self.firing_start = None
 
     def _handle_pellets(self, result: str) -> None:
+        """Pellet mode: start only once on ON, stop on OFF; '-' keeps the current state.
+
+        Args:
+            result: Decision from ``check_measurements``.
+        """
         if result == "ON":
             if self.firing_start is None:
                 self.firing_start = time()
@@ -152,7 +250,7 @@ class FiringControl:
         elif result == "OFF":
             self.stop_firing()
             if self.firing_start:
-                self._log(
+                logger.info(
                     f"combustion time: {round((time() - self.firing_start) / 3600, 1)!r} hours"
                 )
                 self.firing_start = None
@@ -161,66 +259,78 @@ class FiringControl:
 
     def check_measurements(self) -> str:
         """
-        Evaluate the most recent measurements and decide whether firing is needed.
+        Evaluate the buffered measurements of the last 30 minutes and decide whether firing is needed.
+        Without recent data the result is "OFF".
 
-        :returns: "ON", "OFF" or "-"
+        Returns:
+            "ON", "OFF" or "-".
         """
-        mapping: dict = {}
         start_list: list = []
         solar_list: list = []
         dt_now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        logger.info("=" * 99)
+        logger.info(f"New test on measurements: {dt_now}")
 
-        for attempt in range(10):
-            dt_now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            self._log("=" * 99)
-            self._log(f"New test on measurements: {dt_now}")
-            try:
-                mapping = self.get_current_measurements_from_blnet()
-                break
-            except Exception as e:
-                self._log(f"#{attempt} Error while fetching data from BLNET: {e}")
-                if attempt == 9:
-                    return "OFF"
-                sleep(30)
+        with self._lock:
+            buffered = list(self.measurements.values())
+        for heizungs_dict in buffered:
+            if get_time_difference_from_now(heizungs_dict["timestamp"]) <= 30:
+                start_list.append(self._evaluate_firing(heizungs_dict))
+                solar_list.append(int(heizungs_dict["solar_strahlung"]))
+        if not start_list:
+            logger.warning("no measurements within the last 30 minutes")
 
-        try:
-            for measurement_date in self.measurements:
-                heizungs_dict = self.measurements[measurement_date]
-                minutes_ago = get_time_difference_from_now(heizungs_dict["timestamp"])
-                do_firing = self._evaluate_firing(heizungs_dict)
-                if minutes_ago <= 30:
-                    start_list.append(do_firing)
-                    solar_list.append(int(heizungs_dict["solar_strahlung"]))
-        except IndexError:
-            self._log("ERROR: there is nothing to examine???")
-
-        return self._finalize_check(mapping, start_list, solar_list, dt_now)
+        return self._finalize_check(start_list, solar_list, dt_now)
 
     def run(self):
+        """Run the daemon: start metrics server and poller, then the control loop (never returns).
+
+        With the command line argument ``ON`` the relay is only switched on
+        for 5 seconds (manual burn-off test) and the function returns.
+        Sends READY/WATCHDOG notifications to systemd.
+        """
         if len(sys.argv) > 1 and sys.argv[1] == "ON":
-            self._log("Start burn-off per commandline...")
+            logger.info("Start burn-off per commandline...")
             self.start_firing()
-            self._log("manually start done....")
+            logger.info("manually start done....")
             sleep(5)
             self.stop_firing()
             return
 
         start_http_server(self._metrics_port)
-        self._log(f"Prometheus metrics on :{self._metrics_port}/metrics")
+        logger.info(f"Prometheus metrics on :{self._metrics_port}/metrics")
 
+        threading.Thread(target=self._poll_loop, name="blnet-poller", daemon=True).start()
+        sdnotify.notify("READY=1")
+        self._polled.wait(timeout=POLL_RETRIES * (POLL_RETRY_DELAY + 60))
+
+        next_run = monotonic()
         while True:
-            start = time()
             mode = self.operating_mode
-            result = self.check_measurements()
+            try:
+                result = self.check_measurements()
+                if mode == "firewood":
+                    self._handle_firewood(result)
+                elif mode == "pellets":
+                    self._handle_pellets(result)
+                metrics.set_heizung_an(self._heizung_an())
+            except Exception:
+                logger.exception("error in control loop, switching off")
+                try:
+                    self.stop_firing()
+                except Exception:
+                    logger.exception("stop_firing failed")
 
-            if mode == "firewood":
-                self._handle_firewood(result)
-            elif mode == "pellets":
-                self._handle_pellets(result)
+            # only prove liveness while the poller keeps finishing attempts
+            if monotonic() - self._last_attempt < WATCHDOG_MAX_SILENCE:
+                sdnotify.notify("WATCHDOG=1")
 
-            to_sleep = 60 - (time() - start)
-            if to_sleep > 0:
-                sleep(to_sleep)
+            next_run += POLL_INTERVAL
+            delay = next_run - monotonic()
+            if delay < 0:
+                next_run = monotonic()
+                delay = 0
+            sleep(delay)
 
 
 if __name__ == "__main__":

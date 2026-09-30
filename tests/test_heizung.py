@@ -7,7 +7,6 @@ from heizung.control import FiringControl, get_time_difference_from_now
 PELLETS_CONFIG = {
     "ip": "127.0.0.1",
     "operating_mode": "pellets",
-    "logger": "False",
     "relay_pin": 23,
     "metrics_port": 9100,
 }
@@ -24,150 +23,143 @@ class TestGetTimeDifference(unittest.TestCase):
         self.assertEqual(get_time_difference_from_now(timestamp), 17)
 
 
+def _mapping(**overrides):
+    base = {
+        "timestamp": datetime.datetime.now(),
+        "speicher_1_kopf": 55,
+        "speicher_2_kopf": 70,
+        "speicher_3_kopf": 45,
+        "speicher_4_mitte": 40,
+        "speicher_5_boden": 40,
+        "solar_strahlung": 200,
+    }
+    base.update(overrides)
+    return base
+
+
 class TestCheckMeasurements(unittest.TestCase):
-    def _control(self, operating_mode="pellets"):
-        return FiringControl({**PELLETS_CONFIG, "operating_mode": operating_mode})
-
-    def _fake_fetch(self, control, mapping):
-        def _fetch():
+    def _check(self, mapping=None, operating_mode="pellets"):
+        control = FiringControl({**PELLETS_CONFIG, "operating_mode": operating_mode})
+        if mapping is not None:
             control.measurements[mapping["timestamp"]] = mapping
-            return mapping
-
-        return _fetch
+        return control.check_measurements()
 
     def test_returns_on_for_low_storage_temps(self):
-        control = self._control()
-        now = datetime.datetime.now()
-        mapping = {
-            "timestamp": now,
-            "speicher_1_kopf": 40,
-            "speicher_2_kopf": 50,
-            "speicher_3_kopf": 35,
-            "speicher_4_mitte": 30,
-            "speicher_5_boden": 28,
-            "solar_strahlung": 100,
-        }
-        with (
-            patch.object(
-                control,
-                "get_current_measurements_from_blnet",
-                side_effect=self._fake_fetch(control, mapping),
-            ),
-            patch.object(control, "_publish_metrics") as publish,
-        ):
-            result = control.check_measurements()
-
-        self.assertEqual(result, "ON")
-        publish.assert_called_once()
+        m = _mapping(
+            speicher_1_kopf=40,
+            speicher_2_kopf=50,
+            speicher_3_kopf=35,
+            speicher_4_mitte=30,
+            speicher_5_boden=28,
+            solar_strahlung=100,
+        )
+        self.assertEqual(self._check(m), "ON")
 
     def test_returns_off_for_hot_bottom_storage(self):
-        control = self._control()
-        now = datetime.datetime.now()
-        mapping = {
-            "timestamp": now,
-            "speicher_1_kopf": 35,
-            "speicher_2_kopf": 35,
-            "speicher_3_kopf": 35,
-            "speicher_4_mitte": 35,
-            "speicher_5_boden": 73,
-            "solar_strahlung": 120,
-        }
-        with (
-            patch.object(
-                control,
-                "get_current_measurements_from_blnet",
-                side_effect=self._fake_fetch(control, mapping),
-            ),
-            patch.object(control, "_publish_metrics"),
-        ):
-            result = control.check_measurements()
-
-        self.assertEqual(result, "OFF")
+        self.assertEqual(self._check(_mapping(speicher_5_boden=73)), "OFF")
 
     def test_solar_override_switches_off(self):
-        control = self._control()
-        now = datetime.datetime.now()
-        mapping = {
-            "timestamp": now,
-            "speicher_1_kopf": 40,
-            "speicher_2_kopf": 50,
-            "speicher_3_kopf": 35,
-            "speicher_4_mitte": 30,
-            "speicher_5_boden": 28,
-            "solar_strahlung": 800,
-        }
-        with (
-            patch.object(
-                control,
-                "get_current_measurements_from_blnet",
-                side_effect=self._fake_fetch(control, mapping),
-            ),
-            patch.object(control, "_publish_metrics"),
-        ):
-            result = control.check_measurements()
-
-        self.assertEqual(result, "OFF")
+        m = _mapping(
+            speicher_1_kopf=40,
+            speicher_2_kopf=50,
+            speicher_3_kopf=35,
+            speicher_4_mitte=30,
+            speicher_5_boden=28,
+            solar_strahlung=800,
+        )
+        self.assertEqual(self._check(m), "OFF")
 
     def test_returns_dash_for_neutral_recent_values(self):
-        control = self._control()
-        now = datetime.datetime.now()
-        mapping = {
-            "timestamp": now,
-            "speicher_1_kopf": 55,
-            "speicher_2_kopf": 70,
-            "speicher_3_kopf": 45,
-            "speicher_4_mitte": 40,
-            "speicher_5_boden": 40,
-            "solar_strahlung": 200,
-        }
-        with (
-            patch.object(
-                control,
-                "get_current_measurements_from_blnet",
-                side_effect=self._fake_fetch(control, mapping),
-            ),
-            patch.object(control, "_publish_metrics"),
-        ):
-            result = control.check_measurements()
+        self.assertEqual(self._check(_mapping()), "-")
 
-        self.assertEqual(result, "-")
+    def test_returns_off_without_recent_data(self):
+        old = _mapping(timestamp=datetime.datetime.now() - datetime.timedelta(minutes=45))
+        self.assertEqual(self._check(old), "OFF")
+        self.assertEqual(self._check(None), "OFF")
 
-    def test_returns_off_after_10_failed_attempts(self):
-        control = self._control()
+
+class TestPollOnce(unittest.TestCase):
+    def test_retries_then_records_failure_metrics(self):
+        control = FiringControl(PELLETS_CONFIG)
         with (
-            patch.object(
-                control,
-                "get_current_measurements_from_blnet",
-                side_effect=RuntimeError("BLNET down"),
-            ),
-            patch("heizung.control.sleep") as sleep_mock,
+            patch.object(control, "get_current_measurements_from_blnet", side_effect=RuntimeError("down")) as fetch,
+            patch.object(control._stop, "wait", return_value=False),
+            patch("heizung.control.metrics.record_poll_failure") as failure,
             patch.object(control, "_publish_metrics") as publish,
         ):
-            result = control.check_measurements()
+            ok = control.poll_once()
 
-        self.assertEqual(result, "OFF")
-        self.assertEqual(sleep_mock.call_count, 9)
+        self.assertFalse(ok)
+        self.assertEqual(fetch.call_count, 3)
+        self.assertEqual(failure.call_count, 3)
         publish.assert_not_called()
+        self.assertTrue(control._polled.is_set())
+
+    def test_success_publishes_metrics(self):
+        control = FiringControl(PELLETS_CONFIG)
+        mapping = _mapping()
+        with (
+            patch.object(control, "get_current_measurements_from_blnet", return_value=mapping),
+            patch.object(control, "_publish_metrics") as publish,
+        ):
+            self.assertTrue(control.poll_once())
+        publish.assert_called_once()
+
+
+class TestMetricsCollector(unittest.TestCase):
+    def setUp(self):
+        from heizung import metrics
+
+        self.metrics = metrics
+        metrics._state.reset()
+
+    def _samples(self):
+        return {
+            s.name: s.value
+            for fam in self.metrics.HeizungCollector().collect()
+            for s in fam.samples
+        }
+
+    def test_no_sensor_values_before_first_poll(self):
+        samples = self._samples()
+        self.assertEqual(samples["heizung_up"], 0)
+        self.assertNotIn("aussentemperatur", samples)
+
+    def test_fresh_data_is_exposed_without_invented_values(self):
+        self.metrics.set_measurement({"aussentemperatur": 5.2, "d_heizung_pumpe": 1}, heizung_an=1)
+        samples = self._samples()
+        self.assertEqual(samples["heizung_up"], 1)
+        self.assertEqual(samples["aussentemperatur"], 5.2)
+        self.assertEqual(samples["heizung_an"], 1)
+        self.assertNotIn("kessel_rl", samples)
+        self.assertNotIn("d_kessel_ladepumpe", samples)
+
+    def test_stale_data_is_omitted(self):
+        self.metrics.set_measurement({"aussentemperatur": 5.2})
+        with patch("heizung.metrics.time.time", return_value=self.metrics._state.fetched_at + 1000):
+            samples = self._samples()
+        self.assertEqual(samples["heizung_up"], 0)
+        self.assertNotIn("aussentemperatur", samples)
+        self.assertGreater(samples["heizung_data_age_seconds"], 900)
+
+    def test_poll_failures_are_counted(self):
+        self.metrics.record_poll_failure()
+        self.assertEqual(self._samples()["heizung_poll_errors_total"], 1)
 
 
 class TestPublishMetrics(unittest.TestCase):
-    def test_publish_sets_gauges_and_operating_mode(self):
+    def test_publish_sets_measurement_and_operating_mode(self):
         control = FiringControl(PELLETS_CONFIG)
-        now = datetime.datetime(2026, 3, 26, 12, 0, 0)
-        mapping = {
-            "timestamp": now,
-            "aussentemperatur": 5.2,
-            "speicher_5_boden": 40.0,
-            "d_heizung_pumpe": 1,
-        }
+        control.firing_start = 1.0
+        mapping = {"timestamp": datetime.datetime(2026, 3, 26, 12, 0, 0), "aussentemperatur": 5.2}
         with (
             patch("heizung.control.metrics.set_measurement") as set_m,
             patch("heizung.control.metrics.set_operating_mode") as set_mode,
         ):
-            control._publish_metrics(mapping, heizung_an=1)
+            control._publish_metrics(mapping)
 
         set_mode.assert_called_once_with("pellets")
-        set_m.assert_called_once_with(mapping, heizung_an=1)
+        set_m.assert_called_once_with(mapping, heizung_an=1, duration=None)
 
 
 class TestBufferLimit(unittest.TestCase):
@@ -193,6 +185,21 @@ class TestBufferLimit(unittest.TestCase):
 
 
 class TestRun(unittest.TestCase):
+    def test_control_loop_survives_errors_and_switches_off(self):
+        control = FiringControl(PELLETS_CONFIG)
+        with (
+            patch.object(control, "check_measurements", side_effect=KeyError("x")),
+            patch.object(control, "stop_firing") as stop_firing,
+            patch("heizung.control.start_http_server"),
+            patch.object(control, "_poll_loop"),
+            patch.object(control._polled, "wait"),
+            patch("heizung.control.sleep", side_effect=StopLoop),
+            self.assertRaises(StopLoop),
+        ):
+            control.run()
+
+        stop_firing.assert_called_once()
+
     def test_firewood_starts_firing_when_result_on(self):
         control = FiringControl(FIREWOOD_CONFIG)
         with (
@@ -200,7 +207,9 @@ class TestRun(unittest.TestCase):
             patch.object(control, "start_firing") as start_firing,
             patch.object(control, "stop_firing") as stop_firing,
             patch("heizung.control.start_http_server"),
-            patch("heizung.control.time", side_effect=[10.0, 11.0, 12.0]),
+            patch.object(control, "_poll_loop"),
+            patch.object(control._polled, "wait"),
+            patch("heizung.control.time", side_effect=[11.0]),
             patch("heizung.control.sleep", side_effect=StopLoop),
             self.assertRaises(StopLoop),
         ):
@@ -225,7 +234,9 @@ class TestRun(unittest.TestCase):
             patch.object(control, "start_firing") as start_firing,
             patch.object(control, "stop_firing") as stop_firing,
             patch("heizung.control.start_http_server"),
-            patch("heizung.control.time", side_effect=[10.0, 11.0, 12.0, 13.0, 14.0, 15.0]),
+            patch.object(control, "_poll_loop"),
+            patch.object(control._polled, "wait"),
+            patch("heizung.control.time", side_effect=[11.0, 12.0, 13.0]),
             patch("heizung.control.sleep", side_effect=stop_after_second_sleep),
             self.assertRaises(StopLoop),
         ):

@@ -192,11 +192,43 @@ test_values = {
 }
 
 
-def get_messurements(ip: str, reset: bool = False) -> dict:
-    # try:
-    bld = BLNETDirect(ip, reset=reset)
-    blnet = bld.get_latest()
-    # print(blnet)
+REQUIRED_FIELDS = (
+    "speicher_1_kopf",
+    "speicher_2_kopf",
+    "speicher_3_kopf",
+    "speicher_4_mitte",
+    "speicher_5_boden",
+    "solar_strahlung",
+)
+
+
+def get_messurements(ip: str, reset: bool = False, timeout: float = 20) -> dict:
+    """Fetch the latest data frame from the BL-Net and map it to field names.
+
+    Args:
+        ip: IP address of the BL-Net.
+        reset: Passed through to ``BLNETDirect``.
+        timeout: Socket timeout in seconds.
+
+    Returns:
+        Dict with ``timestamp`` and the named analog/digital values.
+
+    Raises:
+        ConnectionError: If the BL-Net returns no data frame.
+    """
+    bld = BLNETDirect(ip, reset=reset, timeout=timeout)
+    try:
+        blnet = bld.get_latest()
+    finally:
+        # pyblnet leaves the socket open when a query fails; the BL-Net has few sessions
+        sock = getattr(bld, "_socket", None)
+        if sock is not None:
+            try:
+                sock.close()
+            except OSError:
+                pass
+    if not isinstance(blnet.get(0), dict):
+        raise ConnectionError(f"BL-Net returned no data frame: {blnet.get(0)!r}")
     data = blnet[0]
     data_time = blnet["date"]
     mapping = {}
@@ -231,5 +263,7 @@ def get_messurements(ip: str, reset: bool = False) -> dict:
         except KeyError:
             pass
             # print(f"{key} : {value} : not found")
-    # print(mapping)
+    missing = [k for k in REQUIRED_FIELDS if mapping.get(k) is None]
+    if missing:
+        raise ConnectionError(f"BL-Net data incomplete, missing: {missing}")
     return mapping

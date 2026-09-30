@@ -3,13 +3,32 @@ This project runs on Raspberry Pi (Bookworm/Trixie) and controls the heating req
 
 ## Architektur
 
-* **Daemon** (`python -m heizung`): liest die UVR1611 über das BL-NET aus, steuert das
-  Relais (Holzvergaser / Pellets) und exportiert alle Sensorwerte als Prometheus-Gauges
-  (Port `metrics_port`, Standard 9100).
+```
+BL-NET ──TCP──▶ Poller-Thread (60 s) ──▶ Puffer (30 min) ──▶ Regelung ──▶ Relais (GPIO)
+                     │
+                     └──▶ Snapshot ──▶ Collector ◀── Prometheus/VictoriaMetrics (Scrape 30 s)
+                                                          ▲
+                                       API / Grafana ─────┘
+```
+
+* **Daemon** (`python -m heizung`, systemd `Type=notify` mit Watchdog), zwei entkoppelte Teile:
+  * *Poller-Thread*: holt alle 60 s (fester Takt, 3 Versuche) die UVR1611-Werte vom BL-NET,
+    füllt den Puffer der letzten 30 Minuten und aktualisiert den Metrics-Snapshot.
+  * *Regelung* (Hauptthread): bewertet den Puffer, schaltet das Relais (Holzvergaser / Pellets);
+    ohne aktuelle Daten (>30 min) wird der Kessel ausgeschaltet.
+  * *Metrics-Collector*: gibt bei jedem Scrape den letzten Snapshot als Prometheus-Gauges aus
+    (Port `metrics_port`, Standard 9100); veraltete Daten (`metrics_stale_after`) werden nicht
+    ausgegeben, dazu `heizung_up` und Health-Metriken.
 * **Prometheus** (oder VictoriaMetrics) scrapt den Daemon, Beispiel: `prometheus/heizung.yml`.
 * **API** (`uvicorn heizung.api:app`): liefert `GET /api/chart?date=&period=` aus Prometheus
   und das statische Dashboard unter `/`. Grafana-Dashboard: `grafana/dashboard-heizung.json`,
   Reverse-Proxy-Beispiel: `traefik/heizung.yml`.
+
+## Logging
+
+Der Daemon loggt per `logging` in `/var/log/heizung/heizung.log` (tägliche Rotation, 14 Tage;
+siehe `etc/logging.conf`). Die systemd-Unit legt das Verzeichnis per `LogsDirectory=heizung` an.
+Im Journal (`journalctl -u heizung`) erscheinen nur noch Start-/Absturzmeldungen (stderr).
 
 ## Setup
 
@@ -29,6 +48,37 @@ Alternativ mit pip:
 
 * `python3 -m venv venv` und `source venv/bin/activate`
 * `pip install -e .[test]`
+
+### Troubleshooting: `uv sync` bricht ab / Pi rebootet
+
+Spontane Reboots während `uv sync` deuten meist auf Unterspannung (Netzteil) oder
+RAM-Mangel hin, ausgelöst durch das Kompilieren von `lgpio`.
+
+1. Diagnose:
+   ```bash
+   vcgencmd get_throttled        # 0x0 = ok, sonst Unterspannung/Überhitzung
+   dmesg -T | grep -iE "voltage|oom|killed"
+   free -h
+   journalctl -b -1 | tail -50   # Log vor dem Reboot
+   ```
+2. Netzteil prüfen: Original-Netzteil (Pi 4: 5V/3A, Pi 5: 5A) und gutes Kabel;
+   Lastspitzen beim Kompilieren überfordern schwache Netzteile.
+3. Swap vergrößern (bei ≤ 1 GB RAM):
+   ```bash
+   sudo dphys-swapfile swapoff
+   sudo sed -i 's/^CONF_SWAPSIZE=.*/CONF_SWAPSIZE=1024/' /etc/dphys-swapfile
+   sudo dphys-swapfile setup && sudo dphys-swapfile swapon
+   ```
+4. Last reduzieren:
+   ```bash
+   UV_CONCURRENT_BUILDS=1 UV_CONCURRENT_INSTALLS=1 MAKEFLAGS="-j1" uv sync --extra raspberry_pi
+   ```
+5. Kompilieren vermeiden: Build-Tools vorab installieren
+   (`sudo apt install build-essential swig liblgpio-dev`) oder `lgpio` per apt
+   (`python3-lgpio`) nutzen und das venv mit `--system-site-packages` anlegen.
+   Nur benötigte Extras syncen (kein `--all-extras`).
+6. Außerdem prüfen: Temperatur (`vcgencmd measure_temp`) und SD-Karte
+   (`sudo dmesg | grep mmc`).
 
 Konfiguration:
 
@@ -57,6 +107,14 @@ Der Daemon stellt auf `metrics_port` (Standard 9100) pro Sensor ein Gauge bereit
 
 * `prometheus/heizung.yml` als `scrape_configs`-Eintrag in die eigene `prometheus.yml` übernehmen
   (Job `heizung`, Intervall 30s, Target `<pi-host>:9100`).
+* Ein eigener Poller-Thread holt alle 60 s (feste Taktung, 3 Versuche à 5 s Abstand) die Daten vom
+  BL-Net; die Regelung liest nur den Puffer. Ist der letzte erfolgreiche Poll älter als
+  `metrics_stale_after` (Standard 180 s, optional in `[heizung]`), werden keine Sensorwerte mehr
+  ausgegeben (Lücke statt veralteter Linie) und `heizung_up` ist 0. Weitere Health-Metriken:
+  `heizung_data_age_seconds`, `heizung_poll_errors_total`, `heizung_poll_duration_seconds`.
+  Ohne aktuelle Daten (>30 min) schaltet die Regelung den Kessel aus.
+* systemd (`Type=notify`, `WatchdogSec=300`) startet den Daemon neu, wenn der Poller hängt.
+  Alert-Beispiele stehen in `prometheus/heizung.yml`.
 * `prometheus_url` in `etc/heizung.conf` muss auf diese Instanz zeigen; die API fragt darüber
   die Chart-Daten ab.
 
