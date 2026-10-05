@@ -50,6 +50,12 @@ function toDate(unixtimestamp) {
     return new Date(unixtimestamp * 1000 - now.getTimezoneOffset() * 60000).toISOString();
 }
 
+function getRollingDayRange() {
+    const end = new Date();
+    const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+    return [toDate(start.getTime() / 1000), toDate(end.getTime() / 1000)];
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 let today  = getQueryParam('datum')  || getToday();
@@ -130,7 +136,12 @@ function processCharts(df) {
             plot_bgcolor:  '#000',
             paper_bgcolor: '#000',
             grid: { rows: 2, columns: 1, pattern: 'independent', roworder: 'top to bottom' },
-            xaxis: { gridcolor: '#333', gridwidth: 1 },
+            xaxis: {
+                gridcolor: '#333', gridwidth: 1,
+                ...(period === 'day' && today === getToday()
+                    ? { range: getRollingDayRange(), autorange: false }
+                    : {})
+            },
             yaxis: {
                 gridcolor: '#444', gridwidth: 1,
                 zerolinecolor: 'lightgreen', zerolinewidth: 1,

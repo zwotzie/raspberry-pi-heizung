@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "raspberry-pi-heizung"
-version = "0.1.0"
+version = "0.1.2"
 description = "Python script to control heating demand on Raspberry Pi."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
   "requests",
   "PyBLNET>=0.10",
@@ -86,7 +86,7 @@ known-first-party = ["heizung"]
 
 # ── Mypy ──────────────────────────────────────────────────────────────────────
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 strict = false
 ignore_missing_imports = true
 disable_error_code = ["import-untyped"]

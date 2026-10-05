@@ -99,10 +99,12 @@ def chart(
     date: Annotated[str, Query(description="Date in YYYY-MM-DD format", example="2026-03-26")],
     period: Annotated[str, Query(description="'day' or 'week'")] = "day",
 ) -> list[list]:
-    """Return minute-resolution rows for one day or one week starting at ``date``.
+    """Return minute-resolution rows for one day or one week ending at ``date``.
+
+    Today's day view covers the trailing 24 hours ending at the current time.
 
     Args:
-        date: Start date in ``YYYY-MM-DD`` format (local midnight).
+        date: Date in ``YYYY-MM-DD`` format (local midnight).
         period: ``"day"`` or ``"week"``.
 
     Returns:
@@ -119,7 +121,15 @@ def chart(
         start = datetime.fromisoformat(date).astimezone()  # midnight in local time
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
-    end = start + timedelta(days=7 if period == "week" else 1)
+    now = datetime.now().astimezone()
+    if period == "week":
+        start -= timedelta(days=6)
+        end = start + timedelta(days=7)
+    elif start.date() == now.date():
+        end = now
+        start = end - timedelta(hours=24)
+    else:
+        end = start + timedelta(days=1)
 
     matcher = "{job=\"heizung\",__name__=~\"" + "|".join(ALL_NAMES) + "\"}"
     params: dict[str, str | float | int] = {
