@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.13"]
+        python-version: ["3.13", "3.14"]
 
     steps:
       - name: Checkout
@@ -33,7 +33,7 @@ jobs:
   test-debian-default-python:
     runs-on: ubuntu-latest
     container:
-      image: debian:bookworm-slim
+      image: debian:trixie-slim
 
     steps:
       - name: Install system dependencies
