@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Heizung UVR1611</title>
+    <style>
+        body  { background-color: #000; color: #dfdfdf; font-family: sans-serif; margin: 0 16px; }
+        a     { color: #aaa; }
+        a.active { color: #fff; font-weight: bold; text-decoration: none; }
+        #toolbar { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; }
+        input[type=date] { background: #111; color: #dfdfdf; border: 1px solid #444; padding: 4px 8px; }
+    </style>
+</head>
+<body>
+<div id="toolbar">
+    <h1 style="margin:0">Heizungskurvenverlauf</h1>
+    <div>
+        <input type="date" id="datepicker">
+        &nbsp;
+        <a id="link-day"  href="?period=day">Tagesansicht</a>
+        &nbsp;|&nbsp;
+        <a id="link-week" href="?period=week">Wochenansicht</a>
+    </div>
+</div>
+
+<div id="Pufferspeicher" style="height:500px"></div>
+<div id="Solar"          style="height:500px"></div>
+<div id="Heizung"        style="height:500px"></div>
+<div id="Wärmeerzeuger"  style="height:500px"></div>
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@4/plotly.min.js" charset="utf-8"></script>
+<script src="uvr-charts.js"></script>
+</body>
+</html>

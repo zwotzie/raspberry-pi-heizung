@@ -1,0 +1,15 @@
+http:
+  routers:
+    # Heizung API – public (chart endpoint + static dashboard)
+    heizung-public:
+      rule: "Host(`heizung.domain.de`)"
+      entryPoints:
+        - web
+      service: heizung-api
+      priority: 10
+
+  services:
+    heizung-api:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8000"   # uvicorn runs natively via systemd
