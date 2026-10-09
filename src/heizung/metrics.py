@@ -1,18 +1,23 @@
 """
 Prometheus metrics for the heizung daemon.
 
-Sensors are exposed as Gauges by a custom collector that renders the
-latest snapshot on every scrape.  If the snapshot is older than ``stale_after``
-seconds (BL-Net unreachable) the sensor samples are omitted, so Prometheus marks
-the series stale instead of serving old values as if they were current.
+The latest BL-Net snapshot is rendered through the shared ``_families()``
+selection and can reach the TSDB two ways:
+
+* **scrape mode (default)**: a custom collector registered in the
+  ``REGISTRY`` is exposed by a local HTTP server (``start_http_server``)
+  that Prometheus / VictoriaMetrics scrapt, or
+* **push mode** (optional ``push_url`` in ``heizung.conf``): ``push()``
+  POSTs the same sample set to VictoriaMetrics'
+  ``/api/v1/import/prometheus`` API after every poll.
+
+If the snapshot is older than ``stale_after`` seconds (BL-Net unreachable)
+the sensor samples are omitted, so the stored series ends instead of
+serving old values as if they were current.
 
 Metric names are identical to the
 column names used by the frontend (keys_all in uvr-charts.js), so the API can
 map Prometheus series back to the JS column order without a lookup table.
-
-Start the HTTP server once (from control.py::run):
-    from prometheus_client import start_http_server
-    start_http_server(metrics_port)
 """
 
 from __future__ import annotations
@@ -20,7 +25,8 @@ from __future__ import annotations
 import threading
 import time
 
-from prometheus_client import REGISTRY, Gauge
+import requests
+from prometheus_client import REGISTRY
 from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
 
 # ── metric names (must match keys_all order in uvr-charts.js) ────────────────
@@ -62,9 +68,24 @@ ALL = ANALOG + DIGITAL
 
 DEFAULT_STALE_AFTER = 180.0
 
+# Logical counter name; stored/exported as ``heizung_poll_errors_total``.
+POLL_ERRORS = "heizung_poll_errors"
+
+# Help strings for the fixed (non-sensor) metrics.
+HELP: dict[str, str] = {
+    "heizung_up": "1 if the latest BL-Net data is fresh, 0 otherwise",
+    POLL_ERRORS: "Failed BL-Net polls",
+    "heizung_data_age_seconds": "Seconds since the last successful BL-Net poll",
+    "heizung_last_measurement_timestamp_seconds": "Unix timestamp of the most recent successful BL-Net poll",
+    "heizung_poll_duration_seconds": "Duration of the last BL-Net poll",
+    "heizung_operating_mode": "Current operating mode (1 = active mode, 0 = inactive)",
+}
+
+VALID_MODES = ("pellets", "firewood")
+
 
 class _State:
-    """Thread-safe snapshot shared between the poller and the collector."""
+    """Thread-safe snapshot shared between the poller and the collectors."""
 
     def __init__(self) -> None:
         self.lock = threading.Lock()
@@ -78,9 +99,62 @@ class _State:
         self.poll_errors = 0
         self.poll_duration: float | None = None
         self.stale_after = DEFAULT_STALE_AFTER
+        self.operating_mode: str | None = None
 
 
 _state = _State()
+
+
+def _families() -> list[tuple[str, float, dict[str, str]]]:
+    """Return the current metric selection as ``(name, value, labels)`` tuples.
+
+    This is the single source of truth for both the scrape collector and the
+    push payload.  Sensor values and sensor-related health metrics are omitted
+    once the snapshot is stale, so the stored series stops instead of
+    continuing with old values.
+    """
+    with _state.lock:
+        values = dict(_state.values)
+        fetched_at = _state.fetched_at
+        heizung_an = _state.heizung_an
+        errors = _state.poll_errors
+        duration = _state.poll_duration
+        stale_after = _state.stale_after
+        operating_mode = _state.operating_mode
+
+    now = time.time()
+    age = None if fetched_at is None else max(0.0, now - fetched_at)
+    fresh = age is not None and age <= stale_after
+
+    fams: list[tuple[str, float, dict[str, str]]] = [
+        ("heizung_up", 1.0 if fresh else 0.0, {}),
+        (POLL_ERRORS, float(errors), {}),
+    ]
+    if age is not None:
+        assert fetched_at is not None
+        fams.append(("heizung_data_age_seconds", age, {}))
+        fams.append(("heizung_last_measurement_timestamp_seconds", float(fetched_at), {}))
+    if duration is not None:
+        fams.append(("heizung_poll_duration_seconds", duration, {}))
+
+    for mode in VALID_MODES:
+        fams.append(
+            ("heizung_operating_mode", 1.0 if mode == operating_mode else 0.0, {"mode": mode})
+        )
+
+    if not fresh:
+        return fams
+
+    for name in ALL:
+        if name == "heizung_an":
+            value: float = float(heizung_an)
+        else:
+            raw = values.get(name)
+            if raw is None:
+                continue
+            value = float(raw)
+        fams.append((name, value, {}))
+    return fams
 
 
 class HeizungCollector:
@@ -88,66 +162,75 @@ class HeizungCollector:
 
     def collect(self):
         """Yield the metric families for one Prometheus scrape."""
-        with _state.lock:
-            values = dict(_state.values)
-            fetched_at = _state.fetched_at
-            heizung_an = _state.heizung_an
-            errors = _state.poll_errors
-            duration = _state.poll_duration
-            stale_after = _state.stale_after
-
-        now = time.time()
-        age = None if fetched_at is None else max(0.0, now - fetched_at)
-        fresh = age is not None and age <= stale_after
-
-        up = GaugeMetricFamily("heizung_up", "1 if the latest BL-Net data is fresh, 0 otherwise")
-        up.add_metric([], 1 if fresh else 0)
-        yield up
-
-        errs = CounterMetricFamily("heizung_poll_errors", "Failed BL-Net polls")
-        errs.add_metric([], errors)
-        yield errs
-
-        if age is not None:
-            g_age = GaugeMetricFamily(
-                "heizung_data_age_seconds", "Seconds since the last successful BL-Net poll"
-            )
-            g_age.add_metric([], age)
-            yield g_age
-            last = GaugeMetricFamily(
-                "heizung_last_measurement_timestamp_seconds",
-                "Unix timestamp of the most recent successful BL-Net poll",
-            )
-            last.add_metric([], fetched_at)
-            yield last
-        if duration is not None:
-            d = GaugeMetricFamily("heizung_poll_duration_seconds", "Duration of the last BL-Net poll")
-            d.add_metric([], duration)
-            yield d
-
-        if not fresh:
-            return
-        for name in ALL:
-            if name == "heizung_an":
-                value = heizung_an
+        for name, value, labels in _families():
+            if name == POLL_ERRORS:
+                fam: CounterMetricFamily | GaugeMetricFamily = CounterMetricFamily(
+                    POLL_ERRORS, HELP[POLL_ERRORS]
+                )
             else:
-                value = values.get(name)
-            if value is None:
-                continue
-            fam = GaugeMetricFamily(name, f"Heizung sensor: {name}")
-            fam.add_metric([], float(value))
+                # label *names* go into the constructor (prometheus_client API).
+                fam = GaugeMetricFamily(
+                    name, HELP.get(name, f"Heizung sensor: {name}"), labels=list(labels)
+                )
+            fam.add_metric(list(labels.values()), value)
             yield fam
 
 
 REGISTRY.register(HeizungCollector())
 
-OPERATING_MODE = Gauge(
-    "heizung_operating_mode",
-    "Current operating mode (1 = active mode, 0 = inactive)",
-    ["mode"],
-)
 
-VALID_MODES = ("pellets", "firewood")
+def _export_name(name: str) -> str:
+    """Stored series name in the TSDB (Counter gains the ``_total`` suffix)."""
+    return name + "_total" if name == POLL_ERRORS else name
+
+
+def render_push_payload(
+    job: str = "heizung",
+    instance: str = "heizung",
+    timestamp_ms: int | None = None,
+) -> str:
+    """Render the current sample set as Prometheus text lines for the import API.
+
+    Each line is ``name{job="…",instance="…",…} value ts_ms``; the whole
+    payload shares a single millisecond timestamp, matching the format
+    VictoriaMetrics' ``/api/v1/import/prometheus`` expects (see
+    ``tools/backfill_to_victoriametrics.py``).
+
+    Args:
+        job: Value of the ``job`` label.
+        instance: Value of the ``instance`` label.
+        timestamp_ms: Millisecond timestamp for all samples; ``time.time()``
+            when None.
+    """
+    if timestamp_ms is None:
+        timestamp_ms = int(time.time() * 1000)
+    lines = []
+    for name, value, labels in _families():
+        all_labels = {"job": job, "instance": instance, **labels}
+        tag = "{" + ",".join(f'{k}="{v}"' for k, v in all_labels.items()) + "}"
+        lines.append(f"{_export_name(name)}{tag} {value:.17g} {timestamp_ms}")
+    return "\n".join(lines) + "\n"
+
+
+def push(vm_url: str, job: str = "heizung", instance: str = "heizung", timeout: int = 15) -> None:
+    """Push the current sample set to VictoriaMetrics' import API.
+
+    Args:
+        vm_url: Base URL of the VictoriaMetrics instance, e.g.
+            ``http://victoriametrics.lan:8428``.
+        job: Value of the ``job`` label.
+        instance: Value of the ``instance`` label.
+        timeout: HTTP timeout in seconds.
+
+    Raises:
+        RuntimeError: If the server responds with a non-2xx status code.
+    """
+    url = f"{vm_url.rstrip('/')}/api/v1/import/prometheus"
+    resp = requests.post(
+        url, data=render_push_payload(job, instance).encode(), timeout=timeout
+    )
+    if resp.status_code not in (200, 204):
+        raise RuntimeError(f"push to {url} failed: HTTP {resp.status_code}: {resp.text[:200]}")
 
 
 def configure(stale_after: float) -> None:
@@ -202,10 +285,10 @@ def record_poll_failure(duration: float | None = None) -> None:
 
 
 def set_operating_mode(mode: str) -> None:
-    """Mark a mode as active (1) and the other valid modes as inactive (0).
+    """Store the currently active operating mode.
 
     Args:
         mode: Operating mode, one of ``VALID_MODES``.
     """
-    for m in VALID_MODES:
-        OPERATING_MODE.labels(mode=m).set(1 if m == mode else 0)
+    with _state.lock:
+        _state.operating_mode = mode

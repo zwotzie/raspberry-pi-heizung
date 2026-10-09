@@ -106,6 +106,67 @@ class TestPollOnce(unittest.TestCase):
         publish.assert_called_once()
 
 
+class TestPushModePollOnce(unittest.TestCase):
+    """poll_once pushes the updated snapshot when push_url is configured."""
+
+    def test_push_mode_success_pushes_with_job_and_instance(self):
+        control = FiringControl(
+            {**PELLETS_CONFIG, "push_url": "http://vm", "push_job": "h1", "push_instance": "i1"}
+        )
+        mapping = _mapping()
+        with (
+            patch.object(control, "get_current_measurements_from_blnet", return_value=mapping),
+            patch("heizung.control.metrics.push") as push,
+        ):
+            self.assertTrue(control.poll_once())
+        push.assert_called_once_with("http://vm", job="h1", instance="i1")
+
+    def test_push_mode_failure_pushes_too(self):
+        control = FiringControl({**PELLETS_CONFIG, "push_url": "http://vm"})
+        with (
+            patch.object(control, "get_current_measurements_from_blnet", side_effect=RuntimeError("down")),
+            patch.object(control._stop, "wait", return_value=False),
+            patch("heizung.control.metrics.push") as push,
+        ):
+            self.assertFalse(control.poll_once())
+        push.assert_called_once()
+
+    def test_scrape_mode_poll_does_not_push(self):
+        control = FiringControl(PELLETS_CONFIG)
+        mapping = _mapping()
+        with (
+            patch.object(control, "get_current_measurements_from_blnet", return_value=mapping),
+            patch("heizung.control.metrics.push") as push,
+        ):
+            self.assertTrue(control.poll_once())
+        push.assert_not_called()
+
+    def test_push_failure_is_not_fatal(self):
+        control = FiringControl({**PELLETS_CONFIG, "push_url": "http://vm"})
+        mapping = _mapping()
+        with (
+            patch.object(control, "get_current_measurements_from_blnet", return_value=mapping),
+            patch("heizung.control.metrics.push", side_effect=RuntimeError("vm down")),
+        ):
+            self.assertTrue(control.poll_once())
+
+
+class TestRunPushMode(unittest.TestCase):
+    def test_run_skips_http_server_in_push_mode(self):
+        control = FiringControl({**PELLETS_CONFIG, "push_url": "http://vm"})
+        with (
+            patch.object(control, "check_measurements", return_value="OFF"),
+            patch.object(control, "stop_firing"),
+            patch("heizung.control.start_http_server") as http_server,
+            patch.object(control, "_poll_loop"),
+            patch.object(control._polled, "wait"),
+            patch("heizung.control.sleep", side_effect=StopLoop),
+            self.assertRaises(StopLoop),
+        ):
+            control.run()
+        http_server.assert_not_called()
+
+
 class TestMetricsCollector(unittest.TestCase):
     def setUp(self):
         from heizung import metrics

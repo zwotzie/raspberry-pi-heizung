@@ -1,6 +1,10 @@
 # Prometheus scrape config for the heizung daemon.
 # Merge the `scrape_configs` entry into your prometheus.yml.
 #
+# Only needed in SCRAPE mode (default). If the daemon runs in push mode
+# (push_url set in etc/heizung.conf), it pushes to VictoriaMetrics directly
+# and this scrape entry is not required.
+#
 # The daemon (systemd: heizung.service) exposes its sensor Gauges on :9100.
 # Adjust the host below to the Pi's address as seen from Prometheus.
 scrape_configs:

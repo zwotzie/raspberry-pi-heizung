@@ -6,9 +6,10 @@ This project runs on Raspberry Pi (Bookworm/Trixie) and controls the heating req
 ```
 BL-NET ──TCP──▶ Poller-Thread (60 s) ──▶ Puffer (30 min) ──▶ Regelung ──▶ Relais (GPIO)
                      │
-                     └──▶ Snapshot ──▶ Collector ◀── Prometheus/VictoriaMetrics (Scrape 30 s)
-                                                          ▲
-                                       API / Grafana ─────┘
+                     └──▶ Snapshot ──▶ VictoriaMetrics ◀── API / Grafana
+                                     ▲
+                         Push-Modus:  Push nach jedem Poll (push_url, empfohlen)
+                         Scrape-Modus: Exporter auf :9100, Scrape 30 s (Standard)
 ```
 
 * **Daemon** (`python -m heizung`, systemd `Type=notify` mit Watchdog), zwei entkoppelte Teile:
@@ -16,11 +17,13 @@ BL-NET ──TCP──▶ Poller-Thread (60 s) ──▶ Puffer (30 min) ──�
     füllt den Puffer der letzten 30 Minuten und aktualisiert den Metrics-Snapshot.
   * *Regelung* (Hauptthread): bewertet den Puffer, schaltet das Relais (Holzvergaser / Pellets);
     ohne aktuelle Daten (>30 min) wird der Kessel ausgeschaltet.
-  * *Metrics-Collector*: gibt bei jedem Scrape den letzten Snapshot als Prometheus-Gauges aus
-    (Port `metrics_port`, Standard 9100); veraltete Daten (`metrics_stale_after`) werden nicht
-    ausgegeben, dazu `heizung_up` und Health-Metriken.
-* **Prometheus** (oder VictoriaMetrics) scrapt den Daemon, Beispiel: `prometheus/heizung.yml`.
-* **API** (`uvicorn heizung.api:app`): liefert `GET /api/chart?date=&period=` aus Prometheus
+  * *Metrics*: der letzte Snapshot liegt als Prometheus-Samples vor (veraltete Daten
+    (`metrics_stale_after`) werden nicht ausgegeben, dazu `heizung_up` und Health-Metriken).
+    Delivery ans TSDB entweder per **Push** an VictoriaMetrics (optional, `push_url`)
+    oder per **Scrape** eines lokalen HTTP-Exporters (Standard, Port `metrics_port`, 9100).
+* **VictoriaMetrics** (bzw. Prometheus im Scrape-Modus, Beispiel: `prometheus/heizung.yml`)
+  empfängt die Daten.
+* **API** (`uvicorn heizung.api:app`): liefert `GET /api/chart?date=&period=` aus dem TSDB
   und das statische Dashboard unter `/`. Grafana-Dashboard: `grafana/dashboard-heizung.json`,
   Reverse-Proxy-Beispiel: `traefik/heizung.yml`.
 
@@ -102,7 +105,7 @@ RAM-Mangel hin, ausgelöst durch das Kompilieren von `lgpio`.
 Konfiguration:
 
 * `etc/sample_heizung.conf` nach `etc/heizung.conf` kopieren und anpassen
-  (`blnet_host`, `operating_mode`, `metrics_port`, `prometheus_url`).
+  (`blnet_host`, `operating_mode`, `metrics_port`, `prometheus_url`, optional `push_url`).
   Logging wird aus `etc/logging.conf` geladen.
 * Optional: `HEIZUNG_CONFIG_PATH` setzt das Verzeichnis, das `etc/` enthält
   (Standard: Verzeichnis des gestarteten Skripts).
@@ -118,24 +121,56 @@ Konfiguration:
 * Lint/Typen (Extra `dev`): `uv run ruff check .` und `uv run mypy src`
 * CI: `.github/workflows/python-tests.yml` (Python 3.11/3.13 und Debian Bookworm)
 
-## Prometheus
+## Metriken: Push (empfohlen) oder Scrape (Standard)
 
-Der Daemon stellt auf `metrics_port` (Standard 9100) pro Sensor ein Gauge bereit
-(Namen wie `aussentemperatur`, `speicher_1_kopf`, `d_kessel_ladepumpe`, …; Definition in
-`src/heizung/metrics.py`). Prometheus (oder VictoriaMetrics/vmagent) scrapt das:
+Der Daemon stellt pro Sensor ein Sample bereit (Namen wie `aussentemperatur`,
+`speicher_1_kopf`, `d_kessel_ladepumpe`, …; Definition in `src/heizung/metrics.py`)
+sowie Health-Metriken: `heizung_up`, `heizung_data_age_seconds`,
+`heizung_poll_errors_total`, `heizung_poll_duration_seconds`,
+`heizung_operating_mode{mode=…}`. Die Werte kommen aus dem Poller-Thread, der
+alle 60 s (feste Taktung, 3 Versuche à 5 s Abstand) die Daten vom BL-Net holt; die
+Regelung liest nur den Puffer.
 
-* `prometheus/heizung.yml` als `scrape_configs`-Eintrag in die eigene `prometheus.yml` übernehmen
-  (Job `heizung`, Intervall 30s, Target `<pi-host>:9100`).
-* Ein eigener Poller-Thread holt alle 60 s (feste Taktung, 3 Versuche à 5 s Abstand) die Daten vom
-  BL-Net; die Regelung liest nur den Puffer. Ist der letzte erfolgreiche Poll älter als
-  `metrics_stale_after` (Standard 180 s, optional in `[heizung]`), werden keine Sensorwerte mehr
-  ausgegeben (Lücke statt veralteter Linie) und `heizung_up` ist 0. Weitere Health-Metriken:
-  `heizung_data_age_seconds`, `heizung_poll_errors_total`, `heizung_poll_duration_seconds`.
-  Ohne aktuelle Daten (>30 min) schaltet die Regelung den Kessel aus.
-* systemd (`Type=notify`, `WatchdogSec=300`) startet den Daemon neu, wenn der Poller hängt.
-  Alert-Beispiele stehen in `prometheus/heizung.yml`.
-* `prometheus_url` in `etc/heizung.conf` muss auf diese Instanz zeigen; die API fragt darüber
-  die Chart-Daten ab.
+### Push-Modus (empfohlen, VictoriaMetrics)
+
+Optional in `etc/heizung.conf` setzen (`etc/sample_heizung.conf` als Vorlage):
+
+```
+push_url="http://victoriametrics.lan:8428"
+push_job="heizung"        # optional, Standard: heizung
+push_instance="heizung"   # optional, Standard: heizung
+```
+
+Der Daemon pusht nach jedem BL-Net-Poll den Snapshot per
+`POST {push_url}/api/v1/import/prometheus` nach VictoriaMetrics – exakt das
+Format des Backfill-Tools (`tools/backfill_to_victoriametrics.py`). Im
+Push-Modus wird der lokale Scrape-HTTP-Server (`:9100`) NICHT mehr gestartet.
+Push-Fehler (z. B. VM kurzzeitig down) werden nur geloggt und brechen den
+Poll-Loop nicht ab.
+
+### Scrape-Modus (Standard, ohne `push_url`)
+
+Der Daemon stellt auf `metrics_port` (Standard 9100) einen Prometheus-Exporter
+bereit; Prometheus (oder VictoriaMetrics/vmagent) scrapt das:
+`prometheus/heizung.yml` als `scrape_configs`-Eintrag in die eigene
+`prometheus.yml` übernehmen (Job `heizung`, Intervall 30s, Target `<pi-host>:9100`).
+
+### Staleness (beide Modi)
+
+Ist der letzte erfolgreiche Poll älter als `metrics_stale_after`
+(Standard 180 s, optional in `[heizung]`), werden keine Sensorwerte mehr
+exportiert bzw. gepusht (Lücke statt veralteter Linie) und `heizung_up` ist
+0. Dashboards/Alerts sollten auf `heizung_up == 1` bzw.
+`heizung_data_age_seconds` filtern. Ohne aktuelle Daten (>30 min) schaltet die
+Regelung den Kessel aus.
+
+Zusätzlich:
+
+* `prometheus_url` in `etc/heizung.conf` muss auf die Instanz zeigen, aus der
+  die API die Chart-Daten abfragt – im Push-Modus dieselbe VictoriaMetrics
+  wie `push_url`.
+* systemd (`Type=notify`, `WatchdogSec=300`) startet den Daemon neu, wenn der
+  Poller hängt. Alert-Beispiele stehen in `prometheus/heizung.yml`.
 
 ## Grafana
 

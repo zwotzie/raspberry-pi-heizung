@@ -47,6 +47,11 @@ def load_config(config_path: str | None = None) -> dict:
         "metrics_port": raw["heizung"].get("metrics_port", 9100),  # Prometheus exporter in the daemon
         "metrics_stale_after": raw["heizung"].get("metrics_stale_after", 180),
         "prometheus_url": raw["heizung"].get("prometheus_url"),  # internal URL, used by the API
+        # Optional push mode: when set, the daemon pushes every poll to this
+        # TSDB (VictoriaMetrics) and skips the scrape HTTP server.
+        "push_url": raw["heizung"].get("push_url"),
+        "push_job": raw["heizung"].get("push_job", "heizung"),
+        "push_instance": raw["heizung"].get("push_instance", "heizung"),
     }
 
 
