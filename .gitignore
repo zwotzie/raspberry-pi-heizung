@@ -1,5 +1,6 @@
 .idea/
-etc/heizung.conf
+etc/config.toml
+etc/logging.conf
 *.pyc
 .coverage
 __pycache__/

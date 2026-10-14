@@ -7,7 +7,7 @@ selection and can reach the TSDB two ways:
 * **scrape mode (default)**: a custom collector registered in the
   ``REGISTRY`` is exposed by a local HTTP server (``start_http_server``)
   that Prometheus / VictoriaMetrics scrapt, or
-* **push mode** (optional ``push_url`` in ``heizung.conf``): ``push()``
+* **push mode** (optional ``push_url`` in ``config.toml``): ``push()``
   POSTs the same sample set to VictoriaMetrics'
   ``/api/v1/import/prometheus`` API after every poll.
 

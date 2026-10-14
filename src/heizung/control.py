@@ -9,7 +9,7 @@ from time import monotonic, sleep, time
 
 from prometheus_client import start_http_server
 
-from heizung import metrics, sdnotify
+from heizung import metrics, sdnotify, weather
 from heizung.ta.fieldlists import get_messurements
 
 logger = logging.getLogger("heizung")
@@ -49,6 +49,8 @@ class FiringControl:
                 else None.
         """
         self.ip = config["ip"]
+        self._config = config
+        self._weather_stop = threading.Event()
         self.operating_mode: str = str(config.get("operating_mode", "pellets"))
         self._gpio = gpio
         self._relay_pin = config.get("relay_pin", 23)
@@ -326,6 +328,18 @@ class FiringControl:
             logger.info(f"Prometheus metrics on :{self._metrics_port}/metrics")
 
         threading.Thread(target=self._poll_loop, name="blnet-poller", daemon=True).start()
+
+        if self._push_url and self._config.get("open_meteo_latitude") is not None and self._config.get("open_meteo_longitude") is not None:
+            threading.Thread(
+                target=weather._weather_loop,
+                args=(self._config, self._weather_stop),
+                name="open-meteo-poller",
+                daemon=True,
+            ).start()
+            logger.info("Open-Meteo: Wetterserien werden nach VictoriaMetrics gepusht")
+        else:
+            logger.info("Open-Meteo: deaktiviert (push_url oder Koordinaten fehlen)")
+
         sdnotify.notify("READY=1")
         self._polled.wait(timeout=POLL_RETRIES * (POLL_RETRY_DELAY + 60))
 

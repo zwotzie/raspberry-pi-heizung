@@ -104,8 +104,11 @@ RAM-Mangel hin, ausgelöst durch das Kompilieren von `lgpio`.
 
 Konfiguration:
 
-* `etc/sample_heizung.conf` nach `etc/heizung.conf` kopieren und anpassen
+* `etc/sample_config.toml` nach `etc/config.toml` kopieren und anpassen
   (`blnet_host`, `operating_mode`, `metrics_port`, `prometheus_url`, optional `push_url`).
+  Optional Open-Meteo-Wettervorhersagen (stündlich + täglich, heute/morgen) werden
+  als eigene VictoriaMetrics-Reihe (`job="open-meteo"`) gepusht, wenn `push_url`
+  sowie `open_meteo_latitude`/`open_meteo_longitude` gesetzt sind.
   Logging wird aus `etc/logging.conf` geladen.
 * Optional: `HEIZUNG_CONFIG_PATH` setzt das Verzeichnis, das `etc/` enthält
   (Standard: Verzeichnis des gestarteten Skripts).
@@ -121,6 +124,39 @@ Konfiguration:
 * Lint/Typen (Extra `dev`): `uv run ruff check .` und `uv run mypy src`
 * CI: `.github/workflows/python-tests.yml` (Python 3.11/3.13 und Debian Bookworm)
 
+## Wetter (Open-Meteo) testen und konfigurieren
+
+Probeabfrage ohne Daemon-Start:
+
+```
+uv run heizung --test-weather
+```
+
+Burn-off-Test (Relais 5 Sekunden geschlossen):
+
+```
+uv run heizung --start-burning
+```
+
+Die nötigen Koordinaten findest du per Rechtsklick auf die eigene Adresse in
+Google Maps, Apple Maps oder OpenStreetMap. In `etc/config.toml` werden sie
+als `open_meteo_latitude` und `open_meteo_longitude` gesetzt, z. B. für Staffort:
+
+```toml
+open_meteo_latitude = 49.13
+open_meteo_longitude = 8.50
+open_meteo_timezone = "Europe/Berlin"
+```
+
+Weitere Open-Meteo-Parameter in `[heizung]`:
+
+- `open_meteo_url`, `open_meteo_api_key`
+- `open_meteo_forecast_days` (Standard 2 = heute + morgen)
+- `open_meteo_hourly`, `open_meteo_daily`
+- `open_meteo_job`, `open_meteo_instance`, `open_meteo_poll_seconds`
+
+Ohne `push_url` und ohne Koordinaten bleibt diese Funktion im Daemon deaktiviert.
+
 ## Metriken: Push (empfohlen) oder Scrape (Standard)
 
 Der Daemon stellt pro Sensor ein Sample bereit (Namen wie `aussentemperatur`,
@@ -133,7 +169,7 @@ Regelung liest nur den Puffer.
 
 ### Push-Modus (empfohlen, VictoriaMetrics)
 
-Optional in `etc/heizung.conf` setzen (`etc/sample_heizung.conf` als Vorlage):
+Optional in `etc/config.toml` setzen (`etc/sample_config.toml` als Vorlage):
 
 ```
 push_url="http://victoriametrics.lan:8428"
@@ -166,7 +202,7 @@ Regelung den Kessel aus.
 
 Zusätzlich:
 
-* `prometheus_url` in `etc/heizung.conf` muss auf die Instanz zeigen, aus der
+* `prometheus_url` in `etc/config.toml` muss auf die Instanz zeigen, aus der
   die API die Chart-Daten abfragt – im Push-Modus dieselbe VictoriaMetrics
   wie `push_url`.
 * systemd (`Type=notify`, `WatchdogSec=300`) startet den Daemon neu, wenn der
@@ -175,10 +211,15 @@ Zusätzlich:
 ## Grafana
 
 `grafana/dashboard-heizung.json` (UID `heizung-uvr1611`) in Grafana importieren
-(Dashboards → New → Import). Es nutzt eine Prometheus-kompatible Datenquelle
-(Prometheus oder VictoriaMetrics), die über die Variable `datasource` gewählt wird, und
-filtert auf `job="heizung"`. Panels: Pufferspeicher, Solar, Heizung, Wärmeerzeuger
-(jeweils analog und digital).
+(Dashboards → New → Import). Das Heizung-Dashboard nutzt eine
+Prometheus-kompatible Datenquelle (Prometheus oder VictoriaMetrics), die über die
+Variable `datasource` gewählt wird, und filtert auf `job="heizung"`.
+
+Zusätzlich `grafana/dashboard-open-meteo.json` (UID `open-meteo`) für die
+Open-Meteo-Wetterwerte. Es nutzt ebenfalls `datasource` sowie Variablen
+`job` (Default `weather`) und `instance` (Default `open-meteo`) und zeigt
+`current_`-Metriken sowie Health (`weather_up`,
+`weather_last_update_timestamp_seconds`).
 
 ## Traefik / Dashboard
 
