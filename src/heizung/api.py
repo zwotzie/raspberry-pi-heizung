@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 def _cfg() -> dict:
-    """Return the current configuration (re-read from heizung.conf)."""
+    """Return the current configuration (re-read from config.toml)."""
     return load_config()
 
 
@@ -49,7 +49,7 @@ def _prometheus_url() -> str:
     """
     url = _cfg().get("prometheus_url")
     if not url:
-        raise RuntimeError("'prometheus_url' is not set in heizung.conf")
+        raise RuntimeError("'prometheus_url' is not set in config.toml")
     return str(url).rstrip("/")
 
 

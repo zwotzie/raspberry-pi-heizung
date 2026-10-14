@@ -9,7 +9,7 @@ from time import monotonic, sleep, time
 
 from prometheus_client import start_http_server
 
-from heizung import metrics, sdnotify
+from heizung import metrics, sdnotify, weather
 from heizung.ta.fieldlists import get_messurements
 
 logger = logging.getLogger("heizung")
@@ -49,10 +49,15 @@ class FiringControl:
                 else None.
         """
         self.ip = config["ip"]
+        self._config = config
+        self._weather_stop = threading.Event()
         self.operating_mode: str = str(config.get("operating_mode", "pellets"))
         self._gpio = gpio
         self._relay_pin = config.get("relay_pin", 23)
         self._metrics_port: int = int(config.get("metrics_port", 9100))
+        self._push_url: str | None = config.get("push_url")
+        self._push_job = str(config.get("push_job", "heizung"))
+        self._push_instance = str(config.get("push_instance", "heizung"))
         self.firing_start: float | None = None
         self.measurements: dict[datetime.datetime, dict] = {}
         self._lock = threading.Lock()
@@ -86,7 +91,7 @@ class FiringControl:
         return 1 if self.firing_start else 0
 
     def _publish_metrics(self, mapping: dict, duration: float | None = None) -> None:
-        """Expose the latest measurement on the Prometheus endpoint.
+        """Update the shared metric snapshot from a successful poll.
 
         Args:
             mapping: Measurement dict as returned by ``get_messurements``.
@@ -94,6 +99,15 @@ class FiringControl:
         """
         metrics.set_operating_mode(self.operating_mode)
         metrics.set_measurement(mapping, heizung_an=self._heizung_an(), duration=duration)
+
+    def _push_metrics(self) -> None:
+        """Push the current metric snapshot when push mode is configured; never raises."""
+        if not self._push_url:
+            return
+        try:
+            metrics.push(self._push_url, job=self._push_job, instance=self._push_instance)
+        except Exception:
+            logger.exception("failed to push metrics to %s", self._push_url)
 
     def get_current_measurements_from_blnet(self) -> dict:
         """Fetch the latest dataset from the BL-Net and add it to the internal buffer.
@@ -113,7 +127,10 @@ class FiringControl:
         return mapping
 
     def poll_once(self) -> bool:
-        """One poll cycle with short retries; always updates metrics. Never raises.
+        """One poll cycle with short retries; always updates and (optionally) pushes metrics.
+
+        In push mode (``push_url`` configured) the updated metric snapshot is
+        pushed to the TSDB after the result, success and failure alike.
 
         Returns:
             True if a measurement was fetched, False after all retries failed.
@@ -135,6 +152,7 @@ class FiringControl:
         finally:
             self._last_attempt = monotonic()
             self._polled.set()
+            self._push_metrics()
 
     def _poll_loop(self) -> None:
         """Poll the BL-Net on a fixed monotonic cadence, independent of the control logic."""
@@ -283,7 +301,10 @@ class FiringControl:
         return self._finalize_check(start_list, solar_list, dt_now)
 
     def run(self):
-        """Run the daemon: start metrics server and poller, then the control loop (never returns).
+        """Run the daemon: start metric delivery (push or scrape) and poller, then the control loop.
+
+        With push mode (``push_url`` configured) the daemon pushes every poll
+        to the TSDB and does not start the scrape HTTP server.
 
         With the command line argument ``ON`` the relay is only switched on
         for 5 seconds (manual burn-off test) and the function returns.
@@ -297,10 +318,28 @@ class FiringControl:
             self.stop_firing()
             return
 
-        start_http_server(self._metrics_port)
-        logger.info(f"Prometheus metrics on :{self._metrics_port}/metrics")
+        if self._push_url:
+            logger.info(
+                f"Push-Modus: pushe Metriken nach {self._push_url} "
+                f"(job={self._push_job}, instance={self._push_instance})"
+            )
+        else:
+            start_http_server(self._metrics_port)
+            logger.info(f"Prometheus metrics on :{self._metrics_port}/metrics")
 
         threading.Thread(target=self._poll_loop, name="blnet-poller", daemon=True).start()
+
+        if self._push_url and self._config.get("open_meteo_latitude") is not None and self._config.get("open_meteo_longitude") is not None:
+            threading.Thread(
+                target=weather._weather_loop,
+                args=(self._config, self._weather_stop),
+                name="open-meteo-poller",
+                daemon=True,
+            ).start()
+            logger.info("Open-Meteo: Wetterserien werden nach VictoriaMetrics gepusht")
+        else:
+            logger.info("Open-Meteo: deaktiviert (push_url oder Koordinaten fehlen)")
+
         sdnotify.notify("READY=1")
         self._polled.wait(timeout=POLL_RETRIES * (POLL_RETRY_DELAY + 60))
 

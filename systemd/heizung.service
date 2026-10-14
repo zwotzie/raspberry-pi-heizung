@@ -1,5 +1,5 @@
 [Unit]
-Description=Heizung UVR1611 daemon (firing control + Prometheus metrics exporter)
+Description=Heizung UVR1611 daemon (firing control + VictoriaMetrics push / Prometheus scrape)
 After=network-online.target
 Wants=network-online.target
 
