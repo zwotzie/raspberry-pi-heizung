@@ -129,7 +129,7 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "°C",
+            "axisLabel": "mm",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "barWidthFactor": 0.6,
@@ -169,7 +169,7 @@
               }
             ]
           },
-          "unit": "celsius"
+          "unit": "millimeter"
         },
         "overrides": []
       },
@@ -228,7 +228,7 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "°C",
+            "axisLabel": "%",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "barWidthFactor": 0.6,
@@ -268,7 +268,9 @@
               }
             ]
           },
-          "unit": "celsius"
+          "unit": "percent",
+          "min": 0,
+          "max": 100
         },
         "overrides": []
       },
@@ -327,7 +329,7 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "°C",
+            "axisLabel": "W/m²",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "barWidthFactor": 0.6,
@@ -367,7 +369,9 @@
               }
             ]
           },
-          "unit": "celsius"
+          "unit": "watt_per_square_meter",
+          "min": 0,
+          "max": 1000
         },
         "overrides": []
       },
@@ -409,7 +413,7 @@
           "refId": "A"
         }
       ],
-      "title": "Kurzwellenstrahlung (Solar)[W/m2]",
+      "title": "Kurzwellenstrahlung (Solar) [W/m²]",
       "type": "timeseries"
     },
     {
@@ -426,7 +430,7 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "°C",
+            "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "barWidthFactor": 0.6,
@@ -466,7 +470,7 @@
               }
             ]
           },
-          "unit": "celsius"
+          "unit": "none"
         },
         "overrides": []
       },
