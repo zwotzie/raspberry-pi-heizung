@@ -172,16 +172,21 @@ class FiringControl:
     # ── helpers extracted to reduce cognitive complexity ──────────────────────
 
     @staticmethod
-    def _evaluate_firing(m: dict) -> str:
+    def _evaluate_firing(m: dict, mode: str = "pellets") -> str:
         """Return 'ON', 'OFF' or '-' for a single measurement dict.
 
         Args:
-            m: Measurement dict with the storage temperature fields.
+            m: Measurement dict with the storage temperature fields and the boiler pump speed.
+            mode: Operating mode. In ``firewood`` the OFF criterion is the boiler
+                charging pump speed of 30 instead of the storage bottom temperature.
 
         Returns:
-            "OFF" if the storage bottom is hot, "ON" if the storage is low or
-            all cold, otherwise "-".
+            "OFF" if the switch-off criterion of the mode is met, "ON" if the storage
+            is low or all cold, otherwise "-".
         """
+        if mode == "firewood":
+            if m.get("kessel_ladepumpe_drehzahl") == 30:
+                return "OFF"
         if m["speicher_5_boden"] > 72:
             return "OFF"
         low_storage = (
@@ -278,6 +283,7 @@ class FiringControl:
     def check_measurements(self) -> str:
         """
         Evaluate the buffered measurements of the last 30 minutes and decide whether firing is needed.
+        In ``firewood`` mode only the latest measurement is evaluated.
         Without recent data the result is "OFF".
 
         Returns:
@@ -290,10 +296,13 @@ class FiringControl:
         logger.info(f"New test on measurements: {dt_now}")
 
         with self._lock:
-            buffered = list(self.measurements.values())
+            if self.operating_mode == "firewood":
+                buffered = [self.measurements[max(self.measurements)]] if self.measurements else []
+            else:
+                buffered = list(self.measurements.values())
         for heizungs_dict in buffered:
             if get_time_difference_from_now(heizungs_dict["timestamp"]) <= 30:
-                start_list.append(self._evaluate_firing(heizungs_dict))
+                start_list.append(self._evaluate_firing(heizungs_dict, self.operating_mode))
                 solar_list.append(int(heizungs_dict["solar_strahlung"]))
         if not start_list:
             logger.warning("no measurements within the last 30 minutes")
