@@ -13,16 +13,16 @@ jobs:
       run:
         working-directory: android
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
 
       - name: Version bestimmen
         id: version
@@ -45,7 +45,7 @@ jobs:
           -PappVersionCode=${{ steps.version.outputs.code }}
           -PappVersionName=${{ steps.version.outputs.name }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: app-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
@@ -58,16 +58,16 @@ jobs:
       run:
         working-directory: android
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
 
       - name: Keystore bereitstellen
         env:
@@ -90,7 +90,7 @@ jobs:
           -PappVersionCode=$(git rev-list --count HEAD)
           -PappVersionName=${GITHUB_REF_NAME#app-v}
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: android/app/build/outputs/apk/release/app-release.apk
           name: Heizung ${{ github.ref_name }}
