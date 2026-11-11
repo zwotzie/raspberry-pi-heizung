@@ -329,3 +329,32 @@ Thanks to Erik Bartmann for his inspiring book "Die elektronische Welt mit Raspb
 19-01-26 00:02:24.714  INFO     timestamp                 : 1548457290
 19-01-26 00:02:24.716  INFO     datetime                  : 2019-01-26 00:01:30
 ```
+## Android-App
+
+Unter `android/` liegt eine eigenständige Android-App (Kotlin, Jetpack Compose), die
+die vier Diagramme als Reiter zeigt — Start ist der Pufferspeicher. Sie liest
+dieselbe API (`/api/chart`) wie die Web-Oberfläche; am Python-Code ändert sich nichts.
+
+**Einmalig einrichten** (für signierte Updates):
+
+```bash
+keytool -genkeypair -v -keystore ~/heizung-release.jks -alias heizung \
+  -keyalg RSA -keysize 2048 -validity 10000 \
+  -dname "CN=Heizung, O=privat, C=DE"
+base64 -i ~/heizung-release.jks | pbcopy
+```
+
+Danach in GitHub unter *Settings → Secrets and variables → Actions* anlegen:
+`HEIZUNG_KEYSTORE_BASE64` (Inhalt der Zwischenablage), `HEIZUNG_KEYSTORE_PASSWORD`,
+`HEIZUNG_KEY_ALIAS` (`heizung`) und `HEIZUNG_KEY_PASSWORD`. Fehlt das Secret, wird
+die APK debug-signiert — dann muss vor jedem Update deinstalliert werden.
+
+**Bauen**
+
+* automatisch: jeder Push lässt `.github/workflows/android.yml` Tests laufen und
+  legt eine Debug-APK als Artefakt ab;
+* Release: Tag `app-v1.0` pushen, der Workflow hängt die signierte APK an das Release.
+
+**Installieren**: Release-Seite im Handy-Browser öffnen, APK laden, „Unbekannte
+Quellen erlauben". In der App einmal die Server-Adresse eintragen (z. B.
+`https://heizung.example.de`); sie wird lokal gespeichert.
