@@ -34,12 +34,12 @@ class DashboardViewModelTest {
     }
 
     private fun vm(api: ChartApi, url: String? = "https://h.example") =
-        DashboardViewModel(api) { url }
+        DashboardViewModel(api, serverUrl = { url })
 
-    private fun sampleRows(count: Int) = (0 until count).map {
+    private fun sampleRows(count: Int) = (0 until count).map { index ->
         ChartRow(
-            timestampSec = 1_700_000_000 + it * 60L,
-            values = MetricId.entries.associateWith { 20.0 + it },
+            timestampSec = 1_700_000_000 + index * 60L,
+            values = MetricId.entries.associateWith { 20.0 + index },
         )
     }
 
