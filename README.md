@@ -175,14 +175,26 @@ Optional in `etc/config.toml` setzen (`etc/sample_config.toml` als Vorlage):
 push_url="http://victoriametrics.lan:8428"
 push_job="heizung"        # optional, Standard: heizung
 push_instance="heizung"   # optional, Standard: heizung
+push_buffer_max=1440      # optional, Standard: 1440 (≈ 24 h); 0 = kein Puffern
 ```
 
 Der Daemon pusht nach jedem BL-Net-Poll den Snapshot per
 `POST {push_url}/api/v1/import/prometheus` nach VictoriaMetrics – exakt das
 Format des Backfill-Tools (`tools/backfill_to_victoriametrics.py`). Im
 Push-Modus wird der lokale Scrape-HTTP-Server (`:9100`) NICHT mehr gestartet.
-Push-Fehler (z. B. VM kurzzeitig down) werden nur geloggt und brechen den
-Poll-Loop nicht ab.
+Push-Fehler (z. B. VM kurzzeitig down, DNS-Ausfall) brechen den Poll-Loop
+nicht ab: Die fertig gerenderten Payloads (mit Zeitstempel des Polls) werden
+im Speicher gepuffert und beim nächsten erfolgreichen Push – älteste zuerst,
+gebündelt – nachgereicht. Das gilt auch für die Open-Meteo-Serien. Die
+Puffergröße steuert `push_buffer_max` (Standard 1440 Payloads ≈ 24 h, `0`
+schaltet das Puffern ab); bei Überlauf werden die ältesten verworfen. Pro
+Poll wird höchstens eine begrenzte Anzahl Batches nachgeliefert, damit ein
+großer Rückstau den Poll-Takt nicht blockiert. Geloggt wird nur der Beginn des
+Ausfalls (WARNING), ein dauerhaft abgelehnter Push (ERROR, einmalig; bleibt die
+Ablehnung bestehen, folgt ein WARNING statt einer Erholungsmeldung), die
+Erholung inkl. Anzahl nachgereichter und verworfener Payloads (INFO) sowie ein
+voller Puffer (WARNING, einmalig). Ein Neustart des Daemons verwirft den
+Puffer.
 
 ### Scrape-Modus (Standard, ohne `push_url`)
 

@@ -273,8 +273,13 @@ openmeteo_fetch = fetch_forecast
 build_forecast = build_forecast_samples
 
 
-def _weather_loop(config: dict, stop_event) -> None:
-    """Background weather poller: fetch hourly, never crash the daemon thread."""
+def _weather_loop(config: dict, stop_event, push_buffer=None) -> None:
+    """Background weather poller: fetch hourly, never crash the daemon thread.
+
+    With a ``PushBuffer`` the rendered payload is queued there, so it is
+    delivered later if VictoriaMetrics is unreachable; otherwise it is pushed
+    directly.
+    """
     url = str(config.get("push_url") or "").strip()
     if not url:
         return
@@ -287,7 +292,12 @@ def _weather_loop(config: dict, stop_event) -> None:
             samples = upsert_health_samples(
                 build_forecast_samples(payload, include_forecast=False)
             )
-            push_forecast(url, samples, job=job, instance=instance)
+            if push_buffer is not None:
+                push_buffer.submit(
+                    render_weather_push_payload(samples, job=job, instance=instance)
+                )
+            else:
+                push_forecast(url, samples, job=job, instance=instance)
         except Exception as exc:
             # Weather is non-critical; log and retry next cycle.
             LOGGER.warning("Open-Meteo fetch or push failed: %s", exc)

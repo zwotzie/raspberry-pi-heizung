@@ -12,6 +12,10 @@ operating_mode="pellets" # [pellets, firewood]
 push_url="http://victoriametrics.lan:8428"
 push_job="heizung"
 push_instance="heizung"
+# If the push fails (VictoriaMetrics/DNS down), payloads are kept in memory and
+# delivered later (oldest first). Max. buffered payloads, 1 per minute (1440 ≈ 24 h).
+# 0 disables buffering: push directly and lose samples while the target is down.
+push_buffer_max=1440
 
 # Port the daemon exposes its Prometheus metrics on (scrape mode, default).
 metrics_port=9100

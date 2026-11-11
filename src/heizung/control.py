@@ -10,6 +10,7 @@ from time import monotonic, sleep, time
 from prometheus_client import start_http_server
 
 from heizung import metrics, sdnotify, weather
+from heizung.pushbuffer import PushBuffer, parse_push_buffer_max
 from heizung.ta.fieldlists import get_messurements
 
 logger = logging.getLogger("heizung")
@@ -55,9 +56,16 @@ class FiringControl:
         self._gpio = gpio
         self._relay_pin = config.get("relay_pin", 23)
         self._metrics_port: int = int(config.get("metrics_port", 9100))
-        self._push_url: str | None = config.get("push_url")
+        self._push_url: str | None = str(config.get("push_url") or "").strip() or None
         self._push_job = str(config.get("push_job", "heizung"))
         self._push_instance = str(config.get("push_instance", "heizung"))
+        buffer_max = parse_push_buffer_max(config.get("push_buffer_max"))
+        # push_buffer_max = 0 disables buffering: push directly, as before.
+        self._push_buffer: PushBuffer | None = (
+            PushBuffer(self._push_url, max_payloads=buffer_max)
+            if self._push_url and buffer_max
+            else None
+        )
         self.firing_start: float | None = None
         self.measurements: dict[datetime.datetime, dict] = {}
         self._lock = threading.Lock()
@@ -101,13 +109,27 @@ class FiringControl:
         metrics.set_measurement(mapping, heizung_an=self._heizung_an(), duration=duration)
 
     def _push_metrics(self) -> None:
-        """Push the current metric snapshot when push mode is configured; never raises."""
-        if not self._push_url:
+        """Push the current metric snapshot in push mode; never raises.
+
+        With buffering enabled (``push_buffer_max`` > 0) the snapshot is
+        rendered with the current timestamp and handed to the push buffer,
+        which keeps it for later delivery if VictoriaMetrics is unreachable.
+        With ``push_buffer_max = 0`` it is pushed directly, as before.
+        """
+        if self._push_url is None:
+            return
+        if self._push_buffer is None:
+            try:
+                metrics.push(self._push_url, job=self._push_job, instance=self._push_instance)
+            except Exception:
+                logger.exception("failed to push metrics to %s", self._push_url)
             return
         try:
-            metrics.push(self._push_url, job=self._push_job, instance=self._push_instance)
+            payload = metrics.render_push_payload(job=self._push_job, instance=self._push_instance)
         except Exception:
-            logger.exception("failed to push metrics to %s", self._push_url)
+            logger.exception("failed to render push payload")
+            return
+        self._push_buffer.submit(payload)
 
     def get_current_measurements_from_blnet(self) -> dict:
         """Fetch the latest dataset from the BL-Net and add it to the internal buffer.
@@ -332,7 +354,7 @@ class FiringControl:
         if self._push_url and self._config.get("open_meteo_latitude") is not None and self._config.get("open_meteo_longitude") is not None:
             threading.Thread(
                 target=weather._weather_loop,
-                args=(self._config, self._weather_stop),
+                args=(self._config, self._weather_stop, self._push_buffer),
                 name="open-meteo-poller",
                 daemon=True,
             ).start()

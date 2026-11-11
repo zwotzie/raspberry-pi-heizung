@@ -2,6 +2,8 @@ import datetime
 import unittest
 from unittest.mock import patch
 
+import requests
+
 from heizung.control import FiringControl, get_time_difference_from_now
 
 PELLETS_CONFIG = {
@@ -107,48 +109,110 @@ class TestPollOnce(unittest.TestCase):
 
 
 class TestPushModePollOnce(unittest.TestCase):
-    """poll_once pushes the updated snapshot when push_url is configured."""
+    """poll_once hands the rendered snapshot to the push buffer when push_url is configured."""
 
-    def test_push_mode_success_pushes_with_job_and_instance(self):
+    def test_push_mode_success_submits_with_job_and_instance(self):
         control = FiringControl(
             {**PELLETS_CONFIG, "push_url": "http://vm", "push_job": "h1", "push_instance": "i1"}
         )
         mapping = _mapping()
         with (
             patch.object(control, "get_current_measurements_from_blnet", return_value=mapping),
-            patch("heizung.control.metrics.push") as push,
+            patch("heizung.control.metrics.render_push_payload", return_value="x 1 1\n") as render,
+            patch.object(control._push_buffer, "submit") as submit,
         ):
             self.assertTrue(control.poll_once())
-        push.assert_called_once_with("http://vm", job="h1", instance="i1")
+        render.assert_called_once_with(job="h1", instance="i1")
+        submit.assert_called_once_with("x 1 1\n")
 
     def test_push_mode_failure_pushes_too(self):
         control = FiringControl({**PELLETS_CONFIG, "push_url": "http://vm"})
         with (
             patch.object(control, "get_current_measurements_from_blnet", side_effect=RuntimeError("down")),
             patch.object(control._stop, "wait", return_value=False),
-            patch("heizung.control.metrics.push") as push,
+            patch.object(control._push_buffer, "submit") as submit,
         ):
             self.assertFalse(control.poll_once())
-        push.assert_called_once()
+        submit.assert_called_once()
 
     def test_scrape_mode_poll_does_not_push(self):
         control = FiringControl(PELLETS_CONFIG)
+        self.assertIsNone(control._push_buffer)
         mapping = _mapping()
         with (
             patch.object(control, "get_current_measurements_from_blnet", return_value=mapping),
-            patch("heizung.control.metrics.push") as push,
+            patch("heizung.pushbuffer.requests.post") as post,
         ):
             self.assertTrue(control.poll_once())
-        push.assert_not_called()
+        post.assert_not_called()
 
-    def test_push_failure_is_not_fatal(self):
+    def test_push_failure_is_not_fatal_and_buffers(self):
         control = FiringControl({**PELLETS_CONFIG, "push_url": "http://vm"})
         mapping = _mapping()
         with (
             patch.object(control, "get_current_measurements_from_blnet", return_value=mapping),
-            patch("heizung.control.metrics.push", side_effect=RuntimeError("vm down")),
+            patch(
+                "heizung.pushbuffer.requests.post",
+                side_effect=requests.ConnectionError("vm down"),
+            ),
         ):
             self.assertTrue(control.poll_once())
+        self.assertEqual(len(control._push_buffer), 1)
+
+    def test_push_buffer_max_from_config(self):
+        control = FiringControl({**PELLETS_CONFIG, "push_url": "http://vm", "push_buffer_max": 5})
+        self.assertEqual(control._push_buffer._queue.maxlen, 5)
+
+    def test_push_buffer_max_zero_pushes_directly_without_buffer(self):
+        control = FiringControl({**PELLETS_CONFIG, "push_url": "http://vm", "push_buffer_max": 0})
+        self.assertIsNone(control._push_buffer)
+        mapping = _mapping()
+        with (
+            patch.object(control, "get_current_measurements_from_blnet", return_value=mapping),
+            patch("heizung.control.metrics.push") as push,
+        ):
+            self.assertTrue(control.poll_once())
+        push.assert_called_once_with("http://vm", job="heizung", instance="heizung")
+
+    def test_negative_push_buffer_max_is_rejected(self):
+        with self.assertRaises(ValueError) as ctx:
+            FiringControl({**PELLETS_CONFIG, "push_url": "http://vm", "push_buffer_max": -5})
+        self.assertIn("push_buffer_max", str(ctx.exception))
+
+    def test_non_numeric_push_buffer_max_is_rejected(self):
+        with self.assertRaises(ValueError) as ctx:
+            FiringControl({**PELLETS_CONFIG, "push_url": "http://vm", "push_buffer_max": "abc"})
+        self.assertIn("push_buffer_max", str(ctx.exception))
+
+    def test_whitespace_push_url_means_scrape_mode(self):
+        control = FiringControl({**PELLETS_CONFIG, "push_url": "   "})
+        self.assertIsNone(control._push_buffer)
+
+    def test_direct_push_failure_is_not_fatal(self):
+        control = FiringControl({**PELLETS_CONFIG, "push_url": "http://vm", "push_buffer_max": 0})
+        mapping = _mapping()
+        with (
+            patch.object(control, "get_current_measurements_from_blnet", return_value=mapping),
+            patch(
+                "heizung.control.metrics.push",
+                side_effect=requests.ConnectionError("vm down"),
+            ),
+        ):
+            self.assertTrue(control.poll_once())
+
+    def test_render_failure_is_logged_and_does_not_submit(self):
+        control = FiringControl({**PELLETS_CONFIG, "push_url": "http://vm"})
+        mapping = _mapping()
+        with (
+            patch.object(control, "get_current_measurements_from_blnet", return_value=mapping),
+            patch(
+                "heizung.control.metrics.render_push_payload",
+                side_effect=RuntimeError("boom"),
+            ),
+            patch.object(control._push_buffer, "submit") as submit,
+        ):
+            self.assertTrue(control.poll_once())
+        submit.assert_not_called()
 
 
 class TestRunPushMode(unittest.TestCase):
