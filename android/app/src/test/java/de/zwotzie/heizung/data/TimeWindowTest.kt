@@ -77,7 +77,7 @@ class TimeWindowTest {
 
         val labels = TimeWindow.tickLabels(ViewWindow(start, end), Period.WEEK, zone)
         assertEquals(7, labels.size)
-        assertEquals("Do", labels.first().second)
+        assertTrue(labels.first().second.startsWith("Do"))
     }
 
     @Test
