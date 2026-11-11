@@ -9,6 +9,20 @@ android {
     namespace = "de.zwotzie.heizung"
     compileSdk = 35
 
+    val keystorePath = System.getenv("HEIZUNG_KEYSTORE_PATH")
+    val hasReleaseKeystore = !keystorePath.isNullOrBlank() && file(keystorePath).exists()
+
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = file(keystorePath!!)
+                storePassword = System.getenv("HEIZUNG_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("HEIZUNG_KEY_ALIAS")
+                keyPassword = System.getenv("HEIZUNG_KEY_PASSWORD")
+            }
+        }
+    }
+
     defaultConfig {
         applicationId = "de.zwotzie.heizung"
         minSdk = 26
@@ -20,6 +34,11 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = if (hasReleaseKeystore) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 

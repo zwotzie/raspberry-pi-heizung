@@ -1,0 +1,97 @@
+name: Android
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["app-v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Version bestimmen
+        id: version
+        run: |
+          code="$(git rev-list --count HEAD)"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            name="${GITHUB_REF_NAME#app-v}"
+          else
+            name="0.0.$code"
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Tests
+        run: ./gradlew :app:testDebugUnitTest
+
+      - name: Debug-APK bauen
+        run: >-
+          ./gradlew :app:assembleDebug
+          -PappVersionCode=${{ steps.version.outputs.code }}
+          -PappVersionName=${{ steps.version.outputs.name }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/app-v')
+    needs: build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Keystore bereitstellen
+        env:
+          KEYSTORE_B64: ${{ secrets.HEIZUNG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/heizung.jks"
+            echo "HEIZUNG_KEYSTORE_PATH=$RUNNER_TEMP/heizung.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Kein Keystore-Secret gesetzt – die APK wird debug-signiert."
+          fi
+
+      - name: Release-APK bauen
+        env:
+          HEIZUNG_KEYSTORE_PASSWORD: ${{ secrets.HEIZUNG_KEYSTORE_PASSWORD }}
+          HEIZUNG_KEY_ALIAS: ${{ secrets.HEIZUNG_KEY_ALIAS }}
+          HEIZUNG_KEY_PASSWORD: ${{ secrets.HEIZUNG_KEY_PASSWORD }}
+        run: >-
+          ./gradlew :app:assembleRelease
+          -PappVersionCode=$(git rev-list --count HEAD)
+          -PappVersionName=${GITHUB_REF_NAME#app-v}
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: android/app/build/outputs/apk/release/app-release.apk
+          name: Heizung ${{ github.ref_name }}
+          generate_release_notes: false
