@@ -161,4 +161,31 @@ class DashboardViewModelTest {
 
         assertEquals(LocalDate.now().minusDays(7), model.state.value.date)
     }
+
+    @Test
+    fun `veraltete antwort ueberschreibt den neueren stand nicht`() = runTest {
+        val first = kotlinx.coroutines.CompletableDeferred<List<ChartRow>>()
+        val second = kotlinx.coroutines.CompletableDeferred<List<ChartRow>>()
+        var calls = 0
+        val api = object : ChartApi {
+            override suspend fun fetch(date: LocalDate, period: Period): List<ChartRow> {
+                calls++
+                return if (calls == 1) first.await() else second.await()
+            }
+        }
+
+        val model = vm(api)
+        advanceUntilIdle()
+        model.previous()
+        advanceUntilIdle()
+
+        val neu = sampleRows(2).map { it.copy(timestampSec = it.timestampSec + 999) }
+        second.complete(neu)
+        advanceUntilIdle()
+        first.complete(sampleRows(1))
+        advanceUntilIdle()
+
+        assertEquals(2, model.state.value.rows.size)
+        assertEquals(neu.first().timestampSec, model.state.value.rows.first().timestampSec)
+    }
 }

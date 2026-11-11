@@ -21,8 +21,8 @@ class ServerUrlTest {
     }
 
     @Test
-    fun `http bleibt erlaubt`() {
-        assertEquals("http://192.168.1.9:8000", ServerUrl.normalize("http://192.168.1.9:8000"))
+    fun `http wird abgelehnt weil android es blockiert`() {
+        assertNull(ServerUrl.normalize("http://192.168.1.9:8000"))
     }
 
     @Test

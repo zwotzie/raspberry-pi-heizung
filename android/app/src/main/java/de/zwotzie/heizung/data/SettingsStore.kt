@@ -15,7 +15,7 @@ object ServerUrl {
         if (trimmed.isEmpty()) return null
 
         val lower = trimmed.lowercase()
-        if (!lower.startsWith("http://") && !lower.startsWith("https://")) return null
+        if (!lower.startsWith("https://")) return null
 
         val scheme = trimmed.substringBefore("://")
         val rest = trimmed.substringAfter("://").trimEnd('/')

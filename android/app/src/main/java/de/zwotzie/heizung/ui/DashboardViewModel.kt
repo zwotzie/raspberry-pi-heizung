@@ -8,6 +8,7 @@ import de.zwotzie.heizung.data.MetricId
 import de.zwotzie.heizung.data.Period
 import de.zwotzie.heizung.data.TimeWindow
 import de.zwotzie.heizung.data.ViewWindow
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,6 +33,8 @@ class DashboardViewModel(
     )
     val state: StateFlow<DashboardState> = _state.asStateFlow()
 
+    private var loadJob: Job? = null
+
     init {
         load()
     }
@@ -39,6 +42,7 @@ class DashboardViewModel(
     fun load() {
         val url = serverUrl()?.takeIf { it.isNotBlank() }
         if (url == null) {
+            loadJob?.cancel()
             _state.update {
                 it.copy(
                     serverUrl = null,
@@ -55,7 +59,8 @@ class DashboardViewModel(
         val date = _state.value.date
         val period = _state.value.period
 
-        viewModelScope.launch {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             try {
                 val rows = api.fetch(date, period)
                 _state.update {

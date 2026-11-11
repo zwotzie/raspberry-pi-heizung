@@ -25,20 +25,17 @@ object SensorColors {
         MetricId.SPEICHER_5_BODEN -> speicher5
         MetricId.AUSSENTEMPERATUR -> aussen
         MetricId.RAUM_RASPT -> raum
-        MetricId.KESSEL_RL,
-        MetricId.KESSEL_BETRIEBSTEMPERATUR,
-        -> kessel
+        MetricId.KESSEL_RL -> kessel
+        MetricId.KESSEL_BETRIEBSTEMPERATUR -> Color(0xFFFCA5A5)
         MetricId.KESSEL_LADEPUMPE_DREHZAHL,
         MetricId.HEIZUNG_PUMPE_DREHZAHL,
         MetricId.SOLAR_LADEPUMPE_DREHZAHL,
         -> drehzahl
-        MetricId.SOLAR_STRAHLUNG,
-        MetricId.SOLAR_VL,
-        -> solar
-        MetricId.SPEICHER_LADELEITUNG,
-        MetricId.HEIZUNG_VL,
-        MetricId.HEIZUNG_RL,
-        -> speicher2
+        MetricId.SOLAR_STRAHLUNG -> solar
+        MetricId.SOLAR_VL -> Color(0xFFF59E0B)
+        MetricId.SPEICHER_LADELEITUNG -> Color(0xFFA3E635)
+        MetricId.HEIZUNG_VL -> speicher2
+        MetricId.HEIZUNG_RL -> speicher1
         else -> digital
     }
 }

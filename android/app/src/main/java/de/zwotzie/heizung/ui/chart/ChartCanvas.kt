@@ -107,8 +107,8 @@ private fun DrawScope.drawTabs(
     val chartBottom = size.height - labelHeight
     val tempsBottom = (chartBottom - digitalZone - secondaryZone).coerceAtLeast(topPad + 40f)
 
-    val visible = rows.filter { it.timestampSec in window.startSec..window.endSec }
-    val drawRows = if (visible.size >= 2) visible else rows
+    val visible = ChartRows.visible(rows, window)
+    val drawRows = visible
 
     val xOf = { sec: Long ->
         val fraction = (sec - window.startSec).toDouble() / window.spanSec

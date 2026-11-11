@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -188,9 +189,10 @@ fun LegendChips(spec: TabSpec, hidden: Set<MetricId>, onToggle: (MetricId) -> Un
             val isHidden = entry.metric in hidden
             Row(
                 modifier = Modifier
+                    .heightIn(min = 36.dp)
                     .background(Color(0xFF121212), RoundedCornerShape(8.dp))
                     .clickable { onToggle(entry.metric) }
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {

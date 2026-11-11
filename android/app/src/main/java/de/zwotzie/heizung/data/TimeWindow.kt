@@ -5,8 +5,6 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlin.math.ceil
-import kotlin.math.max
 
 /** Sichtbarer Zeitausschnitt in UNIX-Sekunden. */
 data class ViewWindow(val startSec: Long, val endSec: Long) {
@@ -16,7 +14,9 @@ data class ViewWindow(val startSec: Long, val endSec: Long) {
 /** Rechnet für Wischen, Zoomen und Achsenbeschriftung. */
 object TimeWindow {
     private const val MIN_SPAN_SEC = 60L
-    private const val DAY_LABELS = 6
+    private const val TARGET_LABELS = 6
+    private const val LAST_STEP_SEC = 86_400L
+    private val STEPS_SEC = longArrayOf(60, 120, 300, 600, 900, 1_800, 3_600, 7_200, 14_400, 21_600, 43_200, 86_400)
 
     /** Fenster über alle Zeilen; `null`, wenn keine Zeile vorliegt. */
     fun of(rows: List<ChartRow>): ViewWindow? =
@@ -58,25 +58,34 @@ object TimeWindow {
     fun tickLabels(window: ViewWindow, period: Period, zone: ZoneId): List<Pair<Long, String>> {
         if (window.spanSec <= 0L) return emptyList()
 
-        return when (period) {
-            Period.DAY -> dayLabels(window, zone)
-            Period.WEEK -> weekLabels(window, zone)
+        return if (period == Period.WEEK && window.spanSec >= 2 * LAST_STEP_SEC) {
+            weekLabels(window, zone)
+        } else {
+            dayLabels(window, zone)
         }
     }
 
     private fun dayLabels(window: ViewWindow, zone: ZoneId): List<Pair<Long, String>> {
-        val hours = max(1.0, window.spanSec / 3600.0)
-        val stepHours = ceil(hours / DAY_LABELS).toLong().coerceAtLeast(1)
-        val step = stepHours * 3600
+        val step = STEPS_SEC.firstOrNull { it >= window.spanSec / TARGET_LABELS } ?: LAST_STEP_SEC
         val formatter = DateTimeFormatter.ofPattern("HH:mm")
 
         val labels = mutableListOf<Pair<Long, String>>()
-        var at = window.startSec
-        while (at < window.endSec) {
-            labels += at to Instant.ofEpochSecond(at).atZone(zone).format(formatter)
-            at += step
+        var cursor = alignDown(Instant.ofEpochSecond(window.startSec).atZone(zone), step)
+        val stepDuration = java.time.Duration.ofSeconds(step)
+
+        while (cursor.toEpochSecond() < window.endSec) {
+            val at = cursor.toEpochSecond()
+            if (at >= window.startSec) labels += at to cursor.format(formatter)
+            cursor = cursor.toLocalDateTime().plus(stepDuration).atZone(zone)
         }
         return labels
+    }
+
+    /** Rundet auf die letzte volle [step]-Grenze der lokalen Uhrzeit ab. */
+    private fun alignDown(zdt: java.time.ZonedDateTime, step: Long): java.time.ZonedDateTime {
+        val secondOfDay = zdt.toLocalTime().toSecondOfDay().toLong()
+        val floored = (secondOfDay / step) * step
+        return zdt.toLocalDate().atTime(java.time.LocalTime.ofSecondOfDay(floored)).atZone(zdt.zone)
     }
 
     private fun weekLabels(window: ViewWindow, zone: ZoneId): List<Pair<Long, String>> {
