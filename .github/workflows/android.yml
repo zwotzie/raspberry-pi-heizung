@@ -2,7 +2,6 @@ name: Android
 
 on:
   push:
-    branches: ["**"]
     tags: ["app-v*"]
   workflow_dispatch:
 
