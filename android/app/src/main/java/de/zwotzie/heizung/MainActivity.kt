@@ -119,6 +119,8 @@ private fun Dashboard(serverUrl: String, onOpenSettings: () -> Unit) {
                 DashboardEvent.Next -> viewModel.next()
                 DashboardEvent.Today -> viewModel.today()
                 is DashboardEvent.SelectTab -> viewModel.selectTab(event.index)
+                DashboardEvent.NextTab -> viewModel.nextTab()
+                DashboardEvent.PreviousTab -> viewModel.previousTab()
                 is DashboardEvent.ToggleSeries -> viewModel.toggleSeries(event.metric)
                 is DashboardEvent.Pan -> viewModel.pan(event.deltaSec)
                 is DashboardEvent.Zoom -> viewModel.zoom(event.factor, event.anchorSec)

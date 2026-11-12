@@ -2,6 +2,7 @@ package de.zwotzie.heizung.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import de.zwotzie.heizung.data.Catalog
 import de.zwotzie.heizung.data.ChartApi
 import de.zwotzie.heizung.data.ChartApiException
 import de.zwotzie.heizung.data.MetricId
@@ -114,6 +115,10 @@ class DashboardViewModel(
     fun selectTab(index: Int) {
         _state.update { it.copy(tabIndex = index) }
     }
+
+    fun nextTab() = selectTab(cycleTab(_state.value.tabIndex, 1, Catalog.tabs.size))
+
+    fun previousTab() = selectTab(cycleTab(_state.value.tabIndex, -1, Catalog.tabs.size))
 
     fun toggleSeries(metric: MetricId) {
         _state.update {

@@ -1,6 +1,8 @@
 package de.zwotzie.heizung.ui.chart
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.runtime.Composable
@@ -12,6 +14,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -24,6 +27,7 @@ import de.zwotzie.heizung.data.MetricId
 import de.zwotzie.heizung.data.TabSpec
 import de.zwotzie.heizung.data.ViewWindow
 import de.zwotzie.heizung.ui.SensorColors
+import de.zwotzie.heizung.ui.SwipeGesture
 import kotlin.math.roundToInt
 
 private val TextColor = Color(0xFF9A9A9A)
@@ -44,6 +48,7 @@ fun ChartCanvas(
     onPan: (Long) -> Unit,
     onZoom: (Double, Long) -> Unit,
     onReset: () -> Unit,
+    onSwipe: ((Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val textMeasurer = rememberTextMeasurer()
@@ -51,9 +56,38 @@ fun ChartCanvas(
     val currentOnPan by rememberUpdatedState(onPan)
     val currentOnZoom by rememberUpdatedState(onZoom)
     val currentOnReset by rememberUpdatedState(onReset)
+    val currentOnSwipe by rememberUpdatedState(onSwipe)
 
     Canvas(
         modifier = modifier
+            .pointerInput(onSwipe != null) {
+                if (onSwipe == null) return@pointerInput
+                awaitEachGesture {
+                    val down = awaitFirstDown(
+                        requireUnconsumed = false,
+                        pass = PointerEventPass.Initial,
+                    )
+                    var totalDx = 0f
+                    var multiTouch = false
+                    var fired = false
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val pressed = event.changes.filter { it.pressed }
+                        if (pressed.isEmpty()) break
+                        if (pressed.size > 1) multiTouch = true
+                        if (multiTouch || fired) continue
+
+                        val change = pressed.first()
+                        totalDx += change.position.x - change.previousPosition.x
+                        val elapsedMs = change.uptimeMillis - down.uptimeMillis
+                        val direction = SwipeGesture.direction(totalDx, size.width.toFloat(), elapsedMs)
+                        if (direction != 0) {
+                            fired = true
+                            currentOnSwipe?.invoke(direction)
+                        }
+                    }
+                }
+            }
             .pointerInput(Unit) {
                 detectTransformGestures { centroid, pan, zoom, _ ->
                     val window = currentWindow

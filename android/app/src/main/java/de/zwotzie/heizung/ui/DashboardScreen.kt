@@ -1,5 +1,11 @@
 package de.zwotzie.heizung.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -54,6 +60,8 @@ sealed interface DashboardEvent {
     data object Next : DashboardEvent
     data object Today : DashboardEvent
     data class SelectTab(val index: Int) : DashboardEvent
+    data object NextTab : DashboardEvent
+    data object PreviousTab : DashboardEvent
     data class ToggleSeries(val metric: MetricId) : DashboardEvent
     data class Pan(val deltaSec: Long) : DashboardEvent
     data class Zoom(val factor: Double, val anchorSec: Long) : DashboardEvent
@@ -68,10 +76,12 @@ private val dateFormat = DateTimeFormatter.ofPattern("EEE, d. MMM", Locale.GERMA
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(state: DashboardState, onEvent: (DashboardEvent) -> Unit) {
-    val spec = Catalog.tabs[state.tabIndex.coerceIn(0, Catalog.tabs.lastIndex)]
     val labels = remember(state.window, state.period) {
         state.window?.let { TimeWindow.tickLabels(it, state.period, zone) } ?: emptyList()
     }
+    val bounds = remember(state.rows) { TimeWindow.of(state.rows) }
+    val window = state.window
+    val fullRange = window != null && bounds != null && window.spanSec >= bounds.spanSec
 
     Scaffold(
         containerColor = Color.Black,
@@ -115,36 +125,71 @@ fun DashboardScreen(state: DashboardState, onEvent: (DashboardEvent) -> Unit) {
                 }
             }
 
-            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                when {
-                    state.error != null -> MessageState(state.error, "Erneut versuchen") {
-                        onEvent(DashboardEvent.Retry)
+            AnimatedContent(
+                targetState = state.tabIndex,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                transitionSpec = {
+                    val count = Catalog.tabs.size
+                    val forwardDistance = Math.floorMod(targetState - initialState, count)
+                    if (forwardDistance <= count / 2) {
+                        (slideInHorizontally { it } + fadeIn()) togetherWith
+                            (slideOutHorizontally { -it } + fadeOut())
+                    } else {
+                        (slideInHorizontally { -it } + fadeIn()) togetherWith
+                            (slideOutHorizontally { it } + fadeOut())
                     }
-                    state.window == null && !state.loading -> MessageState(
-                        "Keine Daten für diesen Tag",
-                        null,
-                        null,
-                    )
-                    state.window != null -> ChartCanvas(
-                        spec = spec,
-                        rows = state.rows,
-                        window = state.window,
-                        hidden = state.hidden,
-                        labels = labels,
-                        onPan = { onEvent(DashboardEvent.Pan(it)) },
-                        onZoom = { factor, anchor -> onEvent(DashboardEvent.Zoom(factor, anchor)) },
-                        onReset = { onEvent(DashboardEvent.ResetZoom) },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
-                if (state.loading) {
-                    LinearProgressIndicator(
-                        modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
-                    )
+                },
+                label = "reiter",
+            ) { index ->
+                val pageSpec = Catalog.tabs[index.coerceIn(0, Catalog.tabs.lastIndex)]
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        when {
+                            state.error != null -> MessageState(state.error, "Erneut versuchen") {
+                                onEvent(DashboardEvent.Retry)
+                            }
+                            state.window == null && !state.loading -> MessageState(
+                                "Keine Daten für diesen Tag",
+                                null,
+                                null,
+                            )
+                            state.window != null -> ChartCanvas(
+                                spec = pageSpec,
+                                rows = state.rows,
+                                window = state.window,
+                                hidden = state.hidden,
+                                labels = labels,
+                                onPan = { onEvent(DashboardEvent.Pan(it)) },
+                                onZoom = { factor, anchor ->
+                                    onEvent(DashboardEvent.Zoom(factor, anchor))
+                                },
+                                onReset = { onEvent(DashboardEvent.ResetZoom) },
+                                onSwipe = if (fullRange) {
+                                    { direction ->
+                                        onEvent(
+                                            if (direction > 0) {
+                                                DashboardEvent.NextTab
+                                            } else {
+                                                DashboardEvent.PreviousTab
+                                            },
+                                        )
+                                    }
+                                } else {
+                                    null
+                                },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                        if (state.loading) {
+                            LinearProgressIndicator(
+                                modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
+                            )
+                        }
+                    }
+
+                    LegendChips(pageSpec, state.hidden) { onEvent(DashboardEvent.ToggleSeries(it)) }
                 }
             }
-
-            LegendChips(spec, state.hidden) { onEvent(DashboardEvent.ToggleSeries(it)) }
         }
     }
 }

@@ -1,5 +1,6 @@
 package de.zwotzie.heizung.ui
 
+import de.zwotzie.heizung.data.Catalog
 import de.zwotzie.heizung.data.ChartApi
 import de.zwotzie.heizung.data.ChartApiException
 import de.zwotzie.heizung.data.ChartRow
@@ -239,5 +240,36 @@ class DashboardViewModelTest {
 
         assertEquals(2, model.state.value.rows.size)
         assertEquals(neu.first().timestampSec, model.state.value.rows.first().timestampSec)
+    }
+
+    @Test
+    fun `naechster tab laeuft im kreis zum ersten`() = runTest {
+        val model = vm(FakeApi(rows = sampleRows(1)))
+        advanceUntilIdle()
+        model.selectTab(Catalog.tabs.lastIndex)
+
+        model.nextTab()
+
+        assertEquals(0, model.state.value.tabIndex)
+    }
+
+    @Test
+    fun `vorheriger tab laeuft im kreis zum letzten`() = runTest {
+        val model = vm(FakeApi(rows = sampleRows(1)))
+        advanceUntilIdle()
+
+        model.previousTab()
+
+        assertEquals(Catalog.tabs.lastIndex, model.state.value.tabIndex)
+    }
+
+    @Test
+    fun `naechster tab geht einen schritt weiter`() = runTest {
+        val model = vm(FakeApi(rows = sampleRows(1)))
+        advanceUntilIdle()
+
+        model.nextTab()
+
+        assertEquals(1, model.state.value.tabIndex)
     }
 }
