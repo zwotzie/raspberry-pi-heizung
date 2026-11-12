@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -159,7 +160,7 @@ private fun DrawScope.drawTabs(
     for (metric in spec.digital.filter { it !in hidden }) {
         val rowBottom = digitalTop + digitalRow
         drawLine(GridColor, Offset(plotLeft, rowBottom), Offset(plotRight, rowBottom), strokeWidth = 1f)
-        drawDigital(drawRows, metric, xOf, digitalTop, rowBottom)
+        drawDigital(drawRows, metric, xOf, plotLeft, plotRight, digitalTop, rowBottom)
         digitalTop = rowBottom + digitalGap
     }
 
@@ -205,9 +206,17 @@ private fun DrawScope.drawDigital(
     rows: List<ChartRow>,
     metric: MetricId,
     xOf: (Long) -> Float,
+    left: Float,
+    right: Float,
     top: Float,
     bottom: Float,
 ) {
+    drawRect(
+        color = SensorColors.bandTint(metric),
+        topLeft = Offset(left, top),
+        size = Size(right - left, bottom - top),
+    )
+
     val path = Path()
     var started = false
     var lastX = 0f
@@ -240,6 +249,5 @@ private fun DrawScope.drawDigital(
         lineTo(lastX, bottom)
         close()
     }
-    drawPath(outline, Color(0xFF34D399).copy(alpha = 0.35f))
-    drawPath(path, Color(0xFF34D399), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx()))
+    drawPath(outline, SensorColors.bandFill(metric))
 }

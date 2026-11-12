@@ -22,6 +22,33 @@ class SensorColorsTest {
     }
 
     @Test
+    fun `digitale baender eines reiters sind farblich unterscheidbar`() {
+        Catalog.tabs.forEach { tab ->
+            val colors = tab.digital.map { SensorColors.of(it) }
+            assertEquals(
+                "Reiter ${tab.title} hat doppelte Digitalfarben",
+                colors.size,
+                colors.toSet().size,
+            )
+        }
+    }
+
+    @Test
+    fun `digitalband bleibt im aus zustand in seiner farbe sichtbar`() {
+        val metric = MetricId.D_KESSEL_FREIGABE
+        val base = SensorColors.of(metric)
+        val fill = SensorColors.bandFill(metric)
+        val tint = SensorColors.bandTint(metric)
+
+        assertEquals(base.red.toDouble(), tint.red.toDouble(), 0.0001)
+        assertEquals(base.green.toDouble(), tint.green.toDouble(), 0.0001)
+        assertEquals(base.blue.toDouble(), tint.blue.toDouble(), 0.0001)
+        assertTrue("Aus-Zustand muss sichtbar bleiben", tint.alpha > 0f)
+        assertTrue("Aus-Zustand ist schwächer als die An-Fläche", tint.alpha < fill.alpha)
+        assertTrue("An-Fläche bleibt durchscheinend", fill.alpha < base.alpha)
+    }
+
+    @Test
     fun `einheiten ausser celsius stehen im legendentext`() {
         val entries = LegendEntries.of(Catalog.tabs[1])
         val strahlung = entries.first { it.metric == MetricId.SOLAR_STRAHLUNG }

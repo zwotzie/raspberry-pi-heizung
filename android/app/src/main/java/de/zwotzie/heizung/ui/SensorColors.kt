@@ -15,7 +15,16 @@ object SensorColors {
     private val kessel = Color(0xFFF87171)
     private val solar = Color(0xFFFACC15)
     private val drehzahl = Color(0xFF6EE7B7)
-    private val digital = Color(0xFF34D399)
+
+    // Digitalbänder: eine Farbe je Aufgabe, damit sich die Bänder eines Reiters
+    // unterscheiden lassen. Töne stammen aus der Palette oben, damit App und
+    // Weboberfläche zusammenpassen.
+    private val digitalPumpe = Color(0xFF4EA1FF)
+    private val digitalFreigabe = Color(0xFFC084FC)
+    private val digitalMischerAuf = Color(0xFF34D399)
+    private val digitalMischerZu = Color(0xFFFB923C)
+    private val digitalAnlageAn = Color(0xFFF87171)
+    private val digitalSolarPumpe = Color(0xFFFACC15)
 
     fun of(metric: MetricId): Color = when (metric) {
         MetricId.SPEICHER_1_KOPF -> speicher1
@@ -36,6 +45,27 @@ object SensorColors {
         MetricId.SPEICHER_LADELEITUNG -> Color(0xFFA3E635)
         MetricId.HEIZUNG_VL -> speicher2
         MetricId.HEIZUNG_RL -> speicher1
-        else -> digital
+        MetricId.D_HEIZUNG_PUMPE,
+        MetricId.D_KESSEL_LADEPUMPE,
+        MetricId.D_SOLAR_KREISPUMPE,
+        -> digitalPumpe
+        MetricId.D_HEIZUNG_MISCHER_AUF,
+        MetricId.D_KESSEL_MISCHER_AUF,
+        -> digitalMischerAuf
+        MetricId.D_HEIZUNG_MISCHER_ZU,
+        MetricId.D_KESSEL_MISCHER_ZU,
+        -> digitalMischerZu
+        MetricId.D_KESSEL_FREIGABE,
+        MetricId.D_SOLAR_FREIGABEPUMPE,
+        -> digitalFreigabe
+        MetricId.D_SOLAR_LADEPUMPE -> digitalSolarPumpe
+        MetricId.HEIZUNG_AN -> digitalAnlageAn
+        else -> digitalMischerAuf
     }
+
+    /** Fläche eines eingeschalteten Digitalbands. */
+    fun bandFill(metric: MetricId): Color = of(metric).copy(alpha = 0.32f)
+
+    /** Schwache Fläche, die auch den Aus-Zustand in der Bandfarbe zeigt. */
+    fun bandTint(metric: MetricId): Color = of(metric).copy(alpha = 0.12f)
 }
