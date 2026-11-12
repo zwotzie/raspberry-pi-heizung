@@ -79,6 +79,7 @@ fun ChartCanvas(
 }
 
 private const val Y_AXIS_WIDTH = 44f
+private const val TEMP_GRID_STEP = 10.0
 
 private fun DrawScope.drawTabs(
     spec: TabSpec,
@@ -117,13 +118,13 @@ private fun DrawScope.drawTabs(
 
     // ── Temperaturbereich ────────────────────────────────────────────────────
     val shownTemps = spec.temperatures.filter { it !in hidden }
-    val range = ChartScale.range(
+    val dataRange = ChartScale.range(
         values = shownTemps.flatMap { metric -> drawRows.map { it.values[metric] } },
         minSpan = 5.0,
     )
+    val range = ChartScale.gridRange(dataRange, TEMP_GRID_STEP)
 
-    for (step in 0..3) {
-        val value = range.start + (range.endInclusive - range.start) * step / 3.0
+    for (value in ChartScale.gridValues(range, TEMP_GRID_STEP)) {
         val y = ChartScale.yOf(value, range, topPad, tempsBottom)
         drawLine(GridColor, Offset(plotLeft, y), Offset(plotRight, y), strokeWidth = 1f)
         drawText(

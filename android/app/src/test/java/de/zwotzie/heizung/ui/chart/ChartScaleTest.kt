@@ -38,6 +38,34 @@ class ChartScaleTest {
     }
 
     @Test
+    fun `gitterbereich wird auf zehnerstellen aufgeweitet`() {
+        val range = ChartScale.gridRange(35.0..48.0, step = 10.0)
+        assertEquals(30.0, range.start, 0.001)
+        assertEquals(50.0, range.endInclusive, 0.001)
+    }
+
+    @Test
+    fun `gitterbereich bleibt bei passenden grenzen unveraendert`() {
+        val range = ChartScale.gridRange(30.0..50.0, step = 10.0)
+        assertEquals(30.0, range.start, 0.001)
+        assertEquals(50.0, range.endInclusive, 0.001)
+    }
+
+    @Test
+    fun `gitterlinien liegen auf zehnerstellen`() {
+        val range = ChartScale.gridRange(35.0..48.0, step = 10.0)
+        assertEquals(listOf(30.0, 40.0, 50.0), ChartScale.gridValues(range, step = 10.0))
+    }
+
+    @Test
+    fun `gitterlinien funktionieren auch unter null grad`() {
+        val range = ChartScale.gridRange(-3.0..7.0, step = 10.0)
+        assertEquals(-10.0, range.start, 0.001)
+        assertEquals(10.0, range.endInclusive, 0.001)
+        assertEquals(listOf(-10.0, 0.0, 10.0), ChartScale.gridValues(range, step = 10.0))
+    }
+
+    @Test
     fun `y wert liegt zwischen oben und unten`() {
         val range = 0.0..100.0
         assertEquals(0f, ChartScale.yOf(100.0, range, top = 0f, bottom = 200f))
