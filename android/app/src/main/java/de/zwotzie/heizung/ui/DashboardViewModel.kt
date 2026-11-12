@@ -55,9 +55,10 @@ class DashboardViewModel(
             return
         }
 
-        _state.update { it.copy(serverUrl = url, loading = true, error = null) }
-        val date = _state.value.date
+        val now = clock()
+        val date = if (_state.value.followToday) now else _state.value.date
         val period = _state.value.period
+        _state.update { it.copy(date = date, serverUrl = url, loading = true, error = null) }
 
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
@@ -100,11 +101,13 @@ class DashboardViewModel(
 
     fun today() {
         val now = clock()
-        if (_state.value.date == now) {
-            load()
-            return
+        _state.update {
+            if (it.date == now) {
+                it.copy(followToday = true)
+            } else {
+                it.copy(date = now, followToday = true, hidden = emptySet())
+            }
         }
-        _state.update { it.copy(date = now, hidden = emptySet()) }
         load()
     }
 
@@ -139,7 +142,9 @@ class DashboardViewModel(
     }
 
     private fun moveBy(days: Long) {
-        _state.update { it.copy(date = it.date.plusDays(days), hidden = emptySet()) }
+        _state.update {
+            it.copy(date = it.date.plusDays(days), followToday = false, hidden = emptySet())
+        }
         load()
     }
 

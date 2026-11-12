@@ -10,6 +10,8 @@ import java.time.LocalDate
 data class DashboardState(
     val serverUrl: String? = null,
     val date: LocalDate = LocalDate.now(),
+    /** True, solange die Ansicht dem heutigen Tag folgt (nicht bewusst geblättert). */
+    val followToday: Boolean = true,
     val period: Period = Period.DAY,
     val tabIndex: Int = 0,
     val hidden: Set<MetricId> = emptySet(),

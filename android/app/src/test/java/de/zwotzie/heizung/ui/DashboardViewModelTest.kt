@@ -25,9 +25,11 @@ class DashboardViewModelTest {
         var error: Throwable? = null,
     ) : ChartApi {
         var calls = 0
+        val dates = mutableListOf<LocalDate>()
 
         override suspend fun fetch(date: LocalDate, period: Period): List<ChartRow> {
             calls++
+            dates += date
             error?.let { throw it }
             return rows
         }
@@ -122,6 +124,56 @@ class DashboardViewModelTest {
 
         assertNull(model.state.value.error)
         assertEquals(2, model.state.value.rows.size)
+    }
+
+    @Test
+    fun `reload nach mitternacht laedt den neuen tag`() = runTest {
+        var heute = LocalDate.of(2026, 11, 11)
+        val api = FakeApi(rows = sampleRows(1))
+        val model = DashboardViewModel(api, serverUrl = { "https://h.example" }, clock = { heute })
+        advanceUntilIdle()
+
+        heute = heute.plusDays(1)
+        model.retry()
+        advanceUntilIdle()
+
+        assertEquals(heute, model.state.value.date)
+        assertEquals(heute, api.dates.last())
+    }
+
+    @Test
+    fun `reload nach blaettern bleibt auf gewaehltem tag`() = runTest {
+        var heute = LocalDate.of(2026, 11, 11)
+        val api = FakeApi(rows = sampleRows(1))
+        val model = DashboardViewModel(api, serverUrl = { "https://h.example" }, clock = { heute })
+        advanceUntilIdle()
+        model.previous()
+        advanceUntilIdle()
+
+        val gewaehlt = heute.minusDays(1)
+        heute = heute.plusDays(1)
+        model.retry()
+        advanceUntilIdle()
+
+        assertEquals(gewaehlt, model.state.value.date)
+        assertEquals(gewaehlt, api.dates.last())
+    }
+
+    @Test
+    fun `heute springt nach mitternacht auf den neuen tag`() = runTest {
+        var heute = LocalDate.of(2026, 11, 11)
+        val api = FakeApi(rows = sampleRows(1))
+        val model = DashboardViewModel(api, serverUrl = { "https://h.example" }, clock = { heute })
+        advanceUntilIdle()
+        model.previous()
+        advanceUntilIdle()
+
+        heute = heute.plusDays(1)
+        model.today()
+        advanceUntilIdle()
+
+        assertEquals(heute, model.state.value.date)
+        assertEquals(heute, api.dates.last())
     }
 
     @Test
