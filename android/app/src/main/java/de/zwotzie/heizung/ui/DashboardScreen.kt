@@ -21,8 +21,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
@@ -49,9 +55,8 @@ import de.zwotzie.heizung.data.Period
 import de.zwotzie.heizung.data.TabSpec
 import de.zwotzie.heizung.data.TimeWindow
 import de.zwotzie.heizung.ui.chart.ChartCanvas
+import java.time.LocalDate
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 /** Aktionen des Hauptbildschirms. */
 sealed interface DashboardEvent {
@@ -71,7 +76,6 @@ sealed interface DashboardEvent {
 }
 
 private val zone = ZoneId.of("Europe/Berlin")
-private val dateFormat = DateTimeFormatter.ofPattern("EEE, d. MMM", Locale.GERMAN)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,22 +92,23 @@ fun DashboardScreen(state: DashboardState, onEvent: (DashboardEvent) -> Unit) {
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text("Heizung", fontWeight = FontWeight.SemiBold)
-                        Text(
-                            text = state.date.format(dateFormat),
-                            fontSize = 12.sp,
-                            color = Color(0xFF8A8A8A),
-                        )
-                    }
+                    Text("Heizung", fontWeight = FontWeight.SemiBold)
                 },
                 actions = {
-                    TextButton(onClick = { onEvent(DashboardEvent.Retry) }) { Text("⟳") }
-                    TextButton(onClick = { onEvent(DashboardEvent.OpenSettings) }) { Text("⚙") }
+                    IconButton(onClick = { onEvent(DashboardEvent.Today) }) {
+                        Icon(Icons.Filled.Home, contentDescription = "Heute")
+                    }
+                    IconButton(onClick = { onEvent(DashboardEvent.Retry) }) {
+                        Icon(Icons.Filled.Refresh, contentDescription = "Neu laden")
+                    }
+                    IconButton(onClick = { onEvent(DashboardEvent.OpenSettings) }) {
+                        Icon(Icons.Filled.Settings, contentDescription = "Einstellungen")
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Black,
                     titleContentColor = Color(0xFFDFDFDF),
+                    actionIconContentColor = Color(0xFFDFDFDF),
                 ),
             )
         },
@@ -114,7 +119,11 @@ fun DashboardScreen(state: DashboardState, onEvent: (DashboardEvent) -> Unit) {
                 .fillMaxSize()
                 .padding(horizontal = 8.dp),
         ) {
-            PeriodControls(state.period, onEvent)
+            PeriodControls(
+                period = state.period,
+                dayLabel = DayLabel.of(state.date, LocalDate.now(zone)),
+                onEvent = onEvent,
+            )
             PrimaryTabRow(selectedTabIndex = state.tabIndex, containerColor = Color.Black) {
                 Catalog.tabs.forEachIndexed { index, tab ->
                     Tab(
@@ -195,7 +204,7 @@ fun DashboardScreen(state: DashboardState, onEvent: (DashboardEvent) -> Unit) {
 }
 
 @Composable
-private fun PeriodControls(period: Period, onEvent: (DashboardEvent) -> Unit) {
+private fun PeriodControls(period: Period, dayLabel: String, onEvent: (DashboardEvent) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -216,7 +225,7 @@ private fun PeriodControls(period: Period, onEvent: (DashboardEvent) -> Unit) {
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = { onEvent(DashboardEvent.Previous) }) { Text("◀", fontSize = 14.sp) }
-            TextButton(onClick = { onEvent(DashboardEvent.Today) }) { Text("Heute", fontSize = 12.sp) }
+            TextButton(onClick = { onEvent(DashboardEvent.Today) }) { Text(dayLabel, fontSize = 12.sp) }
             TextButton(onClick = { onEvent(DashboardEvent.Next) }) { Text("▶", fontSize = 14.sp) }
         }
     }
