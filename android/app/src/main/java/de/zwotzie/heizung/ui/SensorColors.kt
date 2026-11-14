@@ -64,8 +64,8 @@ object SensorColors {
     }
 
     /** Fläche eines eingeschalteten Digitalbands. */
-    fun bandFill(metric: MetricId): Color = of(metric).copy(alpha = 0.32f)
+    fun bandFill(metric: MetricId): Color = of(metric).copy(alpha = 0.85f)
 
     /** Schwache Fläche, die auch den Aus-Zustand in der Bandfarbe zeigt. */
-    fun bandTint(metric: MetricId): Color = of(metric).copy(alpha = 0.12f)
+    fun bandTint(metric: MetricId): Color = of(metric).copy(alpha = 0.28f)
 }
