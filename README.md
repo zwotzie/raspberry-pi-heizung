@@ -353,7 +353,9 @@ die APK debug-signiert — dann muss vor jedem Update deinstalliert werden.
 
 * automatisch: jeder Push lässt `.github/workflows/android.yml` Tests laufen und
   legt eine Debug-APK als Artefakt ab;
-* Release: Tag `app-v1.0` pushen, der Workflow hängt die signierte APK an das Release.
+* Release: Tag `app-v2026.11.1` pushen (Jahr.Monat.Zähler, Zähler beginnt je Monat
+  bei 1), der Workflow hängt die signierte APK an das Release. Die Version steht in
+  den Einstellungen der App; der `versionCode` wird aus dem Tag berechnet.
 
 **Installieren**: Release-Seite im Handy-Browser öffnen, APK laden, „Unbekannte
 Quellen erlauben". In der App einmal die Server-Adresse eintragen (z. B.

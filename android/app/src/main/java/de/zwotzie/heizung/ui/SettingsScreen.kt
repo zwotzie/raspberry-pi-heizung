@@ -28,6 +28,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import de.zwotzie.heizung.BuildConfig
 import kotlinx.coroutines.launch
 
 /**
@@ -127,6 +128,8 @@ fun SettingsScreen(
             message?.let {
                 Text(it, fontSize = 12.sp, color = Color(0xFF9A9A9A))
             }
+
+            Text("Version ${BuildConfig.VERSION_NAME}", fontSize = 11.sp, color = Color(0xFF9A9A9A))
         }
     }
 }
