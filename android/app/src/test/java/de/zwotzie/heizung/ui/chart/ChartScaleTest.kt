@@ -66,6 +66,37 @@ class ChartScaleTest {
     }
 
     @Test
+    fun `gitterschritt bleibt bei normaler spanne auf zehnerstellen`() {
+        assertEquals(10.0, ChartScale.gridStep(45.0), 0.001)
+        assertEquals(10.0, ChartScale.gridStep(30.0), 0.001)
+    }
+
+    @Test
+    fun `gitterschritt wird feiner wenn man hineinzoomt`() {
+        assertEquals(1.0, ChartScale.gridStep(5.0), 0.001)
+        assertEquals(2.0, ChartScale.gridStep(8.0), 0.001)
+        assertEquals(5.0, ChartScale.gridStep(12.0), 0.001)
+    }
+
+    @Test
+    fun `gitterschritt wird groeber bei weiten spannen`() {
+        assertEquals(20.0, ChartScale.gridStep(80.0), 0.001)
+        assertEquals(100.0, ChartScale.gridStep(400.0), 0.001)
+    }
+
+    @Test
+    fun `gitter hat bei jeder spanne hoechstens sieben linien`() {
+        for (span in listOf(5.0, 12.0, 45.0, 80.0, 400.0)) {
+            val step = ChartScale.gridStep(span)
+            val range = ChartScale.gridRange(0.0..span, step)
+            assertTrue(
+                "spanne $span ergibt zu viele linien",
+                ChartScale.gridValues(range, step).size <= 7,
+            )
+        }
+    }
+
+    @Test
     fun `y wert liegt zwischen oben und unten`() {
         val range = 0.0..100.0
         assertEquals(0f, ChartScale.yOf(100.0, range, top = 0f, bottom = 200f))

@@ -31,7 +31,7 @@ import de.zwotzie.heizung.ui.SwipeGesture
 import kotlin.math.roundToInt
 
 private val TextColor = Color(0xFF9A9A9A)
-private val GridColor = Color(0xFF222222)
+private val GridColor = Color(0xFF444444)
 private val AxisColor = Color(0xFF3A3A3A)
 
 /**
@@ -114,7 +114,6 @@ fun ChartCanvas(
 }
 
 private const val Y_AXIS_WIDTH = 44f
-private const val TEMP_GRID_STEP = 10.0
 
 private fun DrawScope.drawTabs(
     spec: TabSpec,
@@ -131,7 +130,7 @@ private fun DrawScope.drawTabs(
     val plotRight = size.width - yAxisWidth
     if (plotRight <= 0f) return
 
-    val topPad = 6.dp.toPx()
+    val topPad = 10.dp.toPx()
     val labelHeight = 18.dp.toPx()
     val digitalRow = 9.dp.toPx()
     val digitalGap = 3.dp.toPx()
@@ -157,16 +156,17 @@ private fun DrawScope.drawTabs(
         values = shownTemps.flatMap { metric -> drawRows.map { it.values[metric] } },
         minSpan = 5.0,
     )
-    val range = ChartScale.gridRange(dataRange, TEMP_GRID_STEP)
+    val step = ChartScale.gridStep(dataRange.endInclusive - dataRange.start)
+    val range = ChartScale.gridRange(dataRange, step)
 
-    for (value in ChartScale.gridValues(range, TEMP_GRID_STEP)) {
+    for (value in ChartScale.gridValues(range, step)) {
         val y = ChartScale.yOf(value, range, topPad, tempsBottom)
         drawLine(GridColor, Offset(plotLeft, y), Offset(plotRight, y), strokeWidth = 1f)
         drawText(
             textMeasurer = textMeasurer,
             text = "${value.roundToInt()}°",
-            topLeft = Offset(plotRight + 4.dp.toPx(), y - 6.dp.toPx()),
-            style = TextStyle(color = TextColor, fontSize = 10.sp),
+            topLeft = Offset(plotRight + 4.dp.toPx(), y - 8.dp.toPx()),
+            style = TextStyle(color = TextColor, fontSize = 12.sp),
         )
     }
 

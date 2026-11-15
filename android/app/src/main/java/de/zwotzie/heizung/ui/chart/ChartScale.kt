@@ -38,6 +38,17 @@ object ChartScale {
         return low..high
     }
 
+    private val STEPS = listOf(1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0)
+
+    /**
+     * Schrittweite fürs Gitter, damit über [span] höchstens [target] Abstände
+     * liegen: bei kleiner Spanne feiner, bei großer gröber.
+     */
+    fun gridStep(span: Double, target: Int = 5): Double {
+        if (span <= 0.0 || target <= 0) return 10.0
+        return STEPS.firstOrNull { span / it <= target } ?: STEPS.last()
+    }
+
     /** Alle Gitterwerte innerhalb von [range], beginnend beim ersten Vielfachen von [step]. */
     fun gridValues(range: ClosedFloatingPointRange<Double>, step: Double): List<Double> {
         if (step <= 0.0) return emptyList()
