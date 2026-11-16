@@ -31,7 +31,7 @@ import de.zwotzie.heizung.ui.SwipeGesture
 import kotlin.math.roundToInt
 
 private val TextColor = Color(0xFF9A9A9A)
-private val GridColor = Color(0xFF444444)
+private val GridColor = Color(0xFF777777)
 private val AxisColor = Color(0xFF3A3A3A)
 
 /**
