@@ -9,6 +9,8 @@ import socket
 import sys
 import tomllib
 
+from heizung.pushbuffer import parse_push_buffer_max
+
 
 def load_config(config_path: str | None = None) -> dict:
     """Load config from config.toml, set up logging and resolve BLNET IP.
@@ -94,6 +96,9 @@ def load_config(config_path: str | None = None) -> dict:
         "push_url": raw["heizung"].get("push_url"),
         "push_job": raw["heizung"].get("push_job", "heizung"),
         "push_instance": raw["heizung"].get("push_instance", "heizung"),
+        # Max. payloads kept in memory while the push target is unreachable;
+        # 0 disables buffering (push directly, as before).
+        "push_buffer_max": parse_push_buffer_max(raw["heizung"].get("push_buffer_max")),
         # Optional Open-Meteo forecast source (pushed as its own job).
         "open_meteo_url": raw["heizung"].get(
             "open_meteo_url", "https://api.open-meteo.com/v1/forecast"

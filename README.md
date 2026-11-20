@@ -175,14 +175,26 @@ Optional in `etc/config.toml` setzen (`etc/sample_config.toml` als Vorlage):
 push_url="http://victoriametrics.lan:8428"
 push_job="heizung"        # optional, Standard: heizung
 push_instance="heizung"   # optional, Standard: heizung
+push_buffer_max=1440      # optional, Standard: 1440 (≈ 24 h); 0 = kein Puffern
 ```
 
 Der Daemon pusht nach jedem BL-Net-Poll den Snapshot per
 `POST {push_url}/api/v1/import/prometheus` nach VictoriaMetrics – exakt das
 Format des Backfill-Tools (`tools/backfill_to_victoriametrics.py`). Im
 Push-Modus wird der lokale Scrape-HTTP-Server (`:9100`) NICHT mehr gestartet.
-Push-Fehler (z. B. VM kurzzeitig down) werden nur geloggt und brechen den
-Poll-Loop nicht ab.
+Push-Fehler (z. B. VM kurzzeitig down, DNS-Ausfall) brechen den Poll-Loop
+nicht ab: Die fertig gerenderten Payloads (mit Zeitstempel des Polls) werden
+im Speicher gepuffert und beim nächsten erfolgreichen Push – älteste zuerst,
+gebündelt – nachgereicht. Das gilt auch für die Open-Meteo-Serien. Die
+Puffergröße steuert `push_buffer_max` (Standard 1440 Payloads ≈ 24 h, `0`
+schaltet das Puffern ab); bei Überlauf werden die ältesten verworfen. Pro
+Poll wird höchstens eine begrenzte Anzahl Batches nachgeliefert, damit ein
+großer Rückstau den Poll-Takt nicht blockiert. Geloggt wird nur der Beginn des
+Ausfalls (WARNING), ein dauerhaft abgelehnter Push (ERROR, einmalig; bleibt die
+Ablehnung bestehen, folgt ein WARNING statt einer Erholungsmeldung), die
+Erholung inkl. Anzahl nachgereichter und verworfener Payloads (INFO) sowie ein
+voller Puffer (WARNING, einmalig). Ein Neustart des Daemons verwirft den
+Puffer.
 
 ### Scrape-Modus (Standard, ohne `push_url`)
 
@@ -317,3 +329,34 @@ Thanks to Erik Bartmann for his inspiring book "Die elektronische Welt mit Raspb
 19-01-26 00:02:24.714  INFO     timestamp                 : 1548457290
 19-01-26 00:02:24.716  INFO     datetime                  : 2019-01-26 00:01:30
 ```
+## Android-App
+
+Unter `android/` liegt eine eigenständige Android-App (Kotlin, Jetpack Compose), die
+die vier Diagramme als Reiter zeigt — Start ist der Pufferspeicher. Sie liest
+dieselbe API (`/api/chart`) wie die Web-Oberfläche; am Python-Code ändert sich nichts.
+
+**Einmalig einrichten** (für signierte Updates):
+
+```bash
+keytool -genkeypair -v -keystore ~/heizung-release.jks -alias heizung \
+  -keyalg RSA -keysize 2048 -validity 10000 \
+  -dname "CN=Heizung, O=privat, C=DE"
+base64 -i ~/heizung-release.jks | pbcopy
+```
+
+Danach in GitHub unter *Settings → Secrets and variables → Actions* anlegen:
+`HEIZUNG_KEYSTORE_BASE64` (Inhalt der Zwischenablage), `HEIZUNG_KEYSTORE_PASSWORD`,
+`HEIZUNG_KEY_ALIAS` (`heizung`) und `HEIZUNG_KEY_PASSWORD`. Fehlt das Secret, wird
+die APK debug-signiert — dann muss vor jedem Update deinstalliert werden.
+
+**Bauen**
+
+* automatisch: jeder Push lässt `.github/workflows/android.yml` Tests laufen und
+  legt eine Debug-APK als Artefakt ab;
+* Release: Tag `app-v2026.11.1` pushen (Jahr.Monat.Zähler, Zähler beginnt je Monat
+  bei 1), der Workflow hängt die signierte APK an das Release. Die Version steht in
+  den Einstellungen der App; der `versionCode` wird aus dem Tag berechnet.
+
+**Installieren**: Release-Seite im Handy-Browser öffnen, APK laden, „Unbekannte
+Quellen erlauben". In der App einmal die Server-Adresse eintragen (z. B.
+`https://heizung.example.de`); sie wird lokal gespeichert.
