@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
   "requests",
-  "PyBLNET>=0.10",
+  "PyBLNET>=0.1,<1",
   "fastapi>=0.110",
   "uvicorn>=0.29",
   "prometheus-client>=0.20",

@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -781,7 +781,7 @@ requires-dist = [
     { name = "lgpio", marker = "extra == 'raspberry-pi'" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
     { name = "prometheus-client", specifier = ">=0.20" },
-    { name = "pyblnet", specifier = ">=0.10" },
+    { name = "pyblnet", specifier = ">=0.1,<1" },
     { name = "pymysql", marker = "extra == 'backfill'", specifier = ">=1.1" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0" },
     { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=5.0" },
