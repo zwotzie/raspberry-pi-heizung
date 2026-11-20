@@ -32,6 +32,7 @@ def _mapping(**overrides):
         "speicher_4_mitte": 40,
         "speicher_5_boden": 40,
         "solar_strahlung": 200,
+        "kessel_ladepumpe_drehzahl": 44,
     }
     base.update(overrides)
     return base
@@ -43,6 +44,43 @@ class TestCheckMeasurements(unittest.TestCase):
         if mapping is not None:
             control.measurements[mapping["timestamp"]] = mapping
         return control.check_measurements()
+
+    def test_firewood_off_when_boiler_pump_speed_is_30(self):
+        m = _mapping(
+            speicher_1_kopf=40,
+            speicher_2_kopf=50,
+            speicher_3_kopf=35,
+            speicher_4_mitte=30,
+            speicher_5_boden=28,
+            kessel_ladepumpe_drehzahl=30,
+        )
+        self.assertEqual(self._check(m, operating_mode="firewood"), "OFF")
+
+    def test_firewood_ignores_hot_bottom_storage(self):
+        self.assertEqual(self._check(_mapping(speicher_5_boden=73), operating_mode="firewood"), "-")
+
+    def test_firewood_ignores_solar_override(self):
+        m = _mapping(
+            speicher_1_kopf=40,
+            speicher_2_kopf=50,
+            speicher_3_kopf=35,
+            speicher_4_mitte=30,
+            speicher_5_boden=28,
+            solar_strahlung=800,
+        )
+        self.assertEqual(self._check(m, operating_mode="firewood"), "ON")
+
+    def test_firewood_dash_for_pump_speed_not_30(self):
+        self.assertEqual(self._check(_mapping(), operating_mode="firewood"), "-")
+
+    def test_firewood_uses_only_latest_measurement(self):
+        control = FiringControl(FIREWOOD_CONFIG)
+        now = datetime.datetime.now()
+        older = _mapping(timestamp=now - datetime.timedelta(minutes=10), kessel_ladepumpe_drehzahl=30)
+        newest = _mapping(timestamp=now, kessel_ladepumpe_drehzahl=44)
+        control.measurements[older["timestamp"]] = older
+        control.measurements[newest["timestamp"]] = newest
+        self.assertEqual(control.check_measurements(), "-")
 
     def test_returns_on_for_low_storage_temps(self):
         m = _mapping(
