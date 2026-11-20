@@ -103,9 +103,3 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 module = ["requests", "requests.*"]
 ignore_missing_imports = true
-
-
-
-
-
-

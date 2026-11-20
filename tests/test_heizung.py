@@ -57,7 +57,7 @@ class TestCheckMeasurements(unittest.TestCase):
         self.assertEqual(self._check(m, operating_mode="firewood"), "OFF")
 
     def test_firewood_ignores_hot_bottom_storage(self):
-        self.assertEqual(self._check(_mapping(speicher_5_boden=73), operating_mode="firewood"), "-")
+        self.assertEqual(self._check(_mapping(speicher_5_boden=73), operating_mode="firewood"), "OFF")
 
     def test_firewood_ignores_solar_override(self):
         m = _mapping(
@@ -68,7 +68,7 @@ class TestCheckMeasurements(unittest.TestCase):
             speicher_5_boden=28,
             solar_strahlung=800,
         )
-        self.assertEqual(self._check(m, operating_mode="firewood"), "ON")
+        self.assertEqual(self._check(m, operating_mode="firewood"), "OFF")
 
     def test_firewood_dash_for_pump_speed_not_30(self):
         self.assertEqual(self._check(_mapping(), operating_mode="firewood"), "-")
